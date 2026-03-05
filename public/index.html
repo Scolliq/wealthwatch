@@ -5,39 +5,84 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WealthWatch - Terminal Finance Dashboard</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>$</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="scanlines"></div>
-  <div class="crt">
 
-    <!-- Terminal frame -->
-    <div class="terminal-frame">
-      <div class="terminal-header">
-        <span class="terminal-title-text">WealthWatch Terminal v1.0.0</span>
-        <div class="terminal-controls">
-          <span class="ctrl-btn">&#9472;</span>
-          <span class="ctrl-btn">&#9633;</span>
-          <span class="ctrl-btn ctrl-close">&#10005;</span>
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">
+        <span class="nav-logo">$</span>
+        <span class="nav-name">WealthWatch</span>
+      </a>
+      <div class="nav-links">
+        <a href="#" class="nav-link slash-nav" data-cmd="/about">About</a>
+        <a href="#" class="nav-link slash-nav" data-cmd="/stack">Docs</a>
+        <a href="#" class="nav-link slash-nav" data-cmd="/help">FAQ</a>
+        <a href="https://github.com/Scolliq/wealthwatch" class="nav-link" target="_blank">GitHub</a>
+        <button class="nav-cta slash-nav" data-cmd="/market">Launch App</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge">Terminal Finance Dashboard</div>
+      <h1 class="hero-title">Track markets like a <span class="hero-accent">pro</span></h1>
+      <p class="hero-sub">Real-time quotes, portfolio tracking, and market data — delivered through a clean terminal interface. No bloat. No clutter.</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary slash-nav" data-cmd="/market">Get Started</button>
+        <button class="btn btn-ghost slash-nav" data-cmd="/help">View Commands</button>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <span class="hero-stat-value">11+</span>
+          <span class="hero-stat-label">Tickers</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-value">&lt;50ms</span>
+          <span class="hero-stat-label">Latency</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-value">99.7%</span>
+          <span class="hero-stat-label">Uptime</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-value">$0</span>
+          <span class="hero-stat-label">Cost</span>
         </div>
       </div>
+    </div>
+  </section>
 
+  <!-- Terminal -->
+  <section class="terminal-section" id="terminal-section">
+    <div class="terminal-wrap">
+      <div class="terminal-chrome">
+        <div class="terminal-dots">
+          <span class="dot dot-red"></span>
+          <span class="dot dot-yellow"></span>
+          <span class="dot dot-green"></span>
+        </div>
+        <span class="terminal-tab">WealthWatch Terminal</span>
+      </div>
       <div class="terminal-body" id="terminal">
-        <!-- All output goes here -->
         <div id="output"></div>
-
-        <!-- Input line -->
         <div class="input-line">
-          <span class="input-prompt">></span>
+          <span class="input-prompt">&gt;</span>
           <input type="text" id="cmd-input" autofocus autocomplete="off" spellcheck="false" placeholder="Type /help to get started">
         </div>
       </div>
     </div>
+  </section>
 
-    <!-- Ticker bar -->
-    <div class="ticker-bar" id="ticker-bar"></div>
-
-  </div>
+  <!-- Ticker bar -->
+  <div class="ticker-bar" id="ticker-bar"></div>
 
   <script src="terminal.js"></script>
 </body>
