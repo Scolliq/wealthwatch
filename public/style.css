@@ -268,6 +268,34 @@ body {
 .tag-bear    { color: var(--red); }
 .tag-neutral { color: var(--yellow); }
 
+/* ─── Badges ───────────────────────────────────────────── */
+
+.tui-badge {
+  float: right;
+  font-size: 9px;
+  padding: 1px 5px;
+  letter-spacing: 1px;
+  font-weight: 700;
+  background: var(--green);
+  color: #000;
+}
+
+.tui-panel-title:has(.tui-badge:empty) .tui-badge { display: none; }
+
+/* ─── Loading animation ────────────────────────────────── */
+
+.loading-dots::after {
+  content: '';
+  animation: dots 1.2s steps(3, end) infinite;
+}
+
+@keyframes dots {
+  0%   { content: ''; }
+  33%  { content: '.'; }
+  66%  { content: '..'; }
+  100% { content: '...'; }
+}
+
 /* ─── Ticker Bar (bottom) ─────────────────────────────── */
 
 .ticker-bar {
