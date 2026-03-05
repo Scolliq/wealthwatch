@@ -1,14 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    WealthWatch Terminal Theme
-   A retro CRT/TUI aesthetic for the modern web
+   CLI-driven interface inspired by interactive terminals
    ═══════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Fira+Code:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
 
 :root {
   --bg: #0a0e14;
   --bg-light: #0d1117;
   --fg: #c5d1de;
+  --fg-dim: #556677;
   --green: #00ff88;
   --green-dim: #00cc6a;
   --cyan: #00d4ff;
@@ -16,27 +17,18 @@
   --red: #ff4444;
   --magenta: #ff79c6;
   --blue: #4da6ff;
-  --orange: #ff9500;
   --border: #1e2d3d;
   --border-bright: #2a4a6b;
   --glow: rgba(0, 255, 136, 0.15);
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', monospace;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', 'Consolas', monospace;
   --font-size: 14px;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 ::selection {
   background: var(--green);
   color: var(--bg);
-}
-
-html {
-  scroll-behavior: smooth;
 }
 
 body {
@@ -47,16 +39,15 @@ body {
   line-height: 1.6;
   overflow-x: hidden;
   min-height: 100vh;
+  padding-bottom: 36px;
 }
 
-/* ─── CRT Scanlines Effect ─────────────────────────────── */
+/* ─── Scanlines ────────────────────────────────────────── */
 
 .scanlines {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
   pointer-events: none;
   z-index: 1000;
   background: repeating-linear-gradient(
@@ -69,60 +60,25 @@ body {
 }
 
 .crt {
-  position: relative;
-  max-width: 900px;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 0 16px;
-}
-
-/* ─── Top Status Bar ───────────────────────────────────── */
-
-.top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 16px;
-  background: var(--bg-light);
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--green-dim);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  backdrop-filter: blur(8px);
-}
-
-.top-left {
-  font-weight: 700;
-  color: var(--green);
-  text-shadow: 0 0 10px var(--glow);
-}
-
-.top-right {
-  color: #556677;
+  padding: 0 12px;
 }
 
 /* ─── Terminal Frame ───────────────────────────────────── */
 
 .terminal-frame {
-  margin: 24px 0;
+  margin: 16px 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
   overflow: hidden;
-  box-shadow:
-    0 0 30px rgba(0, 255, 136, 0.05),
-    0 4px 60px rgba(0, 0, 0, 0.5);
-}
-
-.terminal-frame {
-  border-radius: 0;
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.5);
 }
 
 .terminal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: 4px 10px;
   background: #1a1a2e;
   border-bottom: 1px solid #333;
 }
@@ -133,221 +89,81 @@ body {
   font-weight: 700;
 }
 
-.terminal-controls {
-  display: flex;
-  gap: 0;
-}
+.terminal-controls { display: flex; }
 
 .ctrl-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 20px;
-  color: #888;
-  font-size: 12px;
+  width: 28px; height: 20px;
+  color: #888; font-size: 12px;
   cursor: default;
   transition: background 0.1s;
 }
-
-.ctrl-btn:hover {
-  background: #333;
-  color: #ccc;
-}
-
-.ctrl-close:hover {
-  background: #c42b1c;
-  color: #fff;
-}
+.ctrl-btn:hover { background: #333; color: #ccc; }
+.ctrl-close:hover { background: #c42b1c; color: #fff; }
 
 .terminal-body {
-  padding: 24px;
+  padding: 20px;
   background: var(--bg);
-  min-height: 60vh;
+  min-height: 85vh;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ─── ASCII Banner ─────────────────────────────────────── */
+/* ─── Output Area ──────────────────────────────────────── */
 
-.ascii-banner {
-  color: var(--green);
-  font-size: 11px;
-  line-height: 1.2;
-  text-align: center;
-  text-shadow: 0 0 20px var(--glow);
-  animation: glow-pulse 3s ease-in-out infinite;
-  white-space: pre;
-  overflow-x: auto;
-}
-
-@keyframes glow-pulse {
-  0%, 100% { text-shadow: 0 0 10px var(--glow); opacity: 1; }
-  50% { text-shadow: 0 0 25px var(--glow), 0 0 50px rgba(0,255,136,0.08); opacity: 0.95; }
-}
-
-.tagline {
-  text-align: center;
-  color: var(--cyan);
-  margin: 8px 0 16px;
+#output {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
   font-size: 13px;
-  letter-spacing: 2px;
+  line-height: 1.5;
 }
 
-.divider {
-  color: var(--border-bright);
-  text-align: center;
-  margin: 16px 0;
-  overflow: hidden;
-  font-size: 12px;
+#output .line { margin-bottom: 1px; }
+#output .line-blank { height: 8px; }
+#output .cmd-echo { color: var(--fg-dim); }
+
+.c-green { color: var(--green); }
+.c-cyan { color: var(--cyan); }
+.c-yellow { color: var(--yellow); }
+.c-red { color: var(--red); }
+.c-magenta { color: var(--magenta); }
+.c-blue { color: var(--blue); }
+.c-dim { color: var(--fg-dim); }
+.c-bold { font-weight: 700; }
+.c-green.c-bold { text-shadow: 0 0 10px var(--glow); }
+
+/* Slash command highlight */
+.slash-cmd {
+  color: var(--cyan);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.1s;
+}
+.slash-cmd:hover {
+  color: var(--green);
+  text-shadow: 0 0 8px var(--glow);
+}
+
+/* ─── Input Line ───────────────────────────────────────── */
+
+.input-line {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 4px;
+}
+
+.input-prompt {
+  color: var(--green);
+  font-weight: 700;
+  margin-right: 8px;
   user-select: none;
 }
 
-.divider.thin {
-  color: var(--border);
-}
-
-/* ─── Navigation ───────────────────────────────────────── */
-
-.nav-section {
-  margin: 16px 0;
-}
-
-.nav-prompt {
-  color: var(--yellow);
-  margin-bottom: 8px;
-  font-weight: 700;
-}
-
-.nav-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.nav-item {
-  color: var(--fg);
-  text-decoration: none;
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  transition: all 0.15s ease;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.nav-item:hover,
-.nav-item.active {
-  color: var(--green);
-  border-color: var(--green);
-  background: rgba(0, 255, 136, 0.05);
-  text-shadow: 0 0 10px var(--glow);
-}
-
-.nav-item.active {
-  background: rgba(0, 255, 136, 0.1);
-}
-
-/* ─── Content Sections ─────────────────────────────────── */
-
-.content-section {
-  display: none;
-  animation: fadeIn 0.3s ease;
-}
-
-.content-section.active {
-  display: block;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.section-header {
-  color: var(--cyan);
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed var(--border);
-}
-
-.section-header .prompt {
-  color: var(--green);
-  font-weight: 700;
-}
-
-.section-body {
-  padding: 0;
-}
-
-/* ─── Info Box (About) ─────────────────────────────────── */
-
-.info-box {
-  color: var(--fg);
-  white-space: pre;
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-x: auto;
-}
-
-/* ─── Feature List ─────────────────────────────────────── */
-
-.feature-list {
-  color: var(--fg);
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-x: auto;
-}
-
-.feature-list [class*="hl-"] {
-  font-weight: 700;
-}
-
-/* ─── Command Table ────────────────────────────────────── */
-
-.command-table {
-  color: var(--fg);
-  font-size: 12.5px;
-  line-height: 1.5;
-  overflow-x: auto;
-}
-
-.hl-green { color: var(--green); }
-.hl-cyan { color: var(--cyan); }
-.hl-yellow { color: var(--yellow); }
-.hl-red { color: var(--red); }
-.hl-magenta { color: var(--magenta); }
-
-/* ─── Setup Guide ──────────────────────────────────────── */
-
-.setup-guide {
-  color: var(--fg);
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-x: auto;
-}
-
-/* ─── Demo Terminal ────────────────────────────────────── */
-
-.demo-terminal {
-  background: #0d1117;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 16px;
-}
-
-.demo-prompt {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  margin-bottom: 12px;
-}
-
-.prompt-user {
-  color: #aaa;
-  font-weight: 400;
-  margin-right: 8px;
-}
-
-#demo-input {
+#cmd-input {
   flex: 1;
   background: none;
   border: none;
@@ -358,121 +174,15 @@ body {
   caret-color: var(--green);
 }
 
-#demo-input::placeholder {
-  color: #334455;
-}
-
-.demo-output {
-  color: var(--fg);
-  white-space: pre-wrap;
-  font-size: 13px;
-  line-height: 1.5;
-  min-height: 120px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.demo-output .output-line {
-  margin-bottom: 2px;
-}
-
-.demo-output .cmd-echo {
-  color: #556677;
-}
-
-.demo-output .output-green { color: var(--green); }
-.demo-output .output-cyan { color: var(--cyan); }
-.demo-output .output-yellow { color: var(--yellow); }
-.demo-output .output-red { color: var(--red); }
-
-/* ─── Footer ───────────────────────────────────────────── */
-
-.footer {
-  text-align: center;
-  padding: 16px 0;
-}
-
-.footer-art {
-  color: var(--yellow);
-  font-size: 9px;
-  line-height: 1.1;
-  opacity: 0.6;
-  margin-bottom: 16px;
-}
-
-.footer-links {
-  margin-bottom: 12px;
-}
-
-.footer-link {
-  color: var(--cyan);
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.footer-link:hover {
-  color: var(--green);
-  text-shadow: 0 0 10px var(--glow);
-}
-
-.footer-sep {
-  color: var(--border-bright);
-  margin: 0 8px;
-}
-
-.footer-text {
-  color: #556677;
-}
-
-.footer-status {
-  font-size: 12px;
-  color: #556677;
-  margin-top: 8px;
-}
-
-.status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  background: var(--green);
-  border-radius: 50%;
-  animation: blink-dot 2s infinite;
-  vertical-align: middle;
-  margin-right: 4px;
-}
-
-@keyframes blink-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-/* ─── Blinking Cursor ──────────────────────────────────── */
-
-.cursor-line {
-  margin-top: 24px;
-}
-
-.cursor-line .prompt {
-  color: var(--green);
-  font-weight: 700;
-}
-
-.cursor {
-  color: var(--green);
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+#cmd-input::placeholder {
+  color: #2a3a4a;
 }
 
 /* ─── Ticker Bar ───────────────────────────────────────── */
 
 .ticker-bar {
   position: fixed;
-  bottom: 0;
-  left: 0;
+  bottom: 0; left: 0;
   width: 100%;
   background: #0d1117;
   border-top: 1px solid var(--border);
@@ -483,7 +193,7 @@ body {
   z-index: 100;
 }
 
-.ticker-bar .ticker-content {
+.ticker-content {
   display: inline-block;
   animation: scroll-ticker 30s linear infinite;
 }
@@ -493,90 +203,23 @@ body {
   100% { transform: translateX(-100%); }
 }
 
-.ticker-bar .ticker-item {
-  display: inline-block;
-  margin-right: 32px;
-}
-
+.ticker-item { display: inline-block; margin-right: 32px; }
 .ticker-up { color: var(--green); }
 .ticker-down { color: var(--red); }
 .ticker-symbol { color: var(--cyan); font-weight: 700; }
 
 /* ─── Scrollbar ────────────────────────────────────────── */
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-bright);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--green-dim);
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--green-dim); }
 
 /* ─── Responsive ───────────────────────────────────────── */
 
-@media (max-width: 700px) {
-  :root {
-    --font-size: 12px;
-  }
-
-  .ascii-banner {
-    font-size: 6px;
-  }
-
-  .crt {
-    padding: 0 8px;
-  }
-
-  .terminal-body {
-    padding: 12px;
-  }
-
-  .nav-items {
-    flex-direction: column;
-  }
-
-  .nav-item {
-    text-align: center;
-  }
-
-  .info-box,
-  .feature-list,
-  .command-table,
-  .setup-guide {
-    font-size: 11px;
-  }
-
-  .top-bar {
-    font-size: 10px;
-  }
-
-  .footer-art {
-    font-size: 6px;
-  }
-}
-
-@media (max-width: 480px) {
-  .ascii-banner {
-    font-size: 4.5px;
-  }
-
-  .top-right {
-    display: none;
-  }
-}
-
-/* ─── Page bottom padding for ticker ───────────────────── */
-
-body {
-  padding-bottom: 40px;
+@media (max-width: 600px) {
+  :root { --font-size: 12px; }
+  .crt { padding: 0 6px; }
+  .terminal-body { padding: 12px; }
+  #output { font-size: 11px; }
 }
