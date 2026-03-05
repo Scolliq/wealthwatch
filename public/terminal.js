@@ -17,8 +17,8 @@
   // 3. Paste them below
   // 4. Run the SQL migration from supabase-schema.sql in the SQL editor
 
-  const SUPABASE_URL  = 'YOUR_SUPABASE_URL';   // e.g. https://xxxxx.supabase.co
-  const SUPABASE_ANON = 'YOUR_SUPABASE_ANON_KEY';
+  const SUPABASE_URL  = 'https://nrrmrbymsxcsvuofsonx.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ycm1yYnltc3hjc3Z1b2Zzb254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MzYxNDAsImV4cCI6MjA4ODMxMjE0MH0.55BiZOo98GqW0JZU-fM-EgBITCQJRpgb4-LML6zkWkI';
 
   let sb = null;
   let currentUser = null;
