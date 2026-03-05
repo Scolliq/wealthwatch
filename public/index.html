@@ -20,12 +20,12 @@
     <!-- Main terminal frame -->
     <div class="terminal-frame">
       <div class="terminal-header">
-        <div class="terminal-buttons">
-          <span class="btn-close"></span>
-          <span class="btn-min"></span>
-          <span class="btn-max"></span>
+        <span class="terminal-title-text">C:\WealthWatch></span>
+        <div class="terminal-controls">
+          <span class="ctrl-btn">&#9472;</span>
+          <span class="ctrl-btn">&#9633;</span>
+          <span class="ctrl-btn ctrl-close">&#10005;</span>
         </div>
-        <span class="terminal-title">user@wealthwatch:~$</span>
       </div>
 
       <div class="terminal-body" id="terminal">
@@ -57,7 +57,7 @@
         <!-- Content sections -->
         <section class="content-section active" id="about">
           <div class="section-header">
-            <span class="prompt">$</span> cat /etc/wealthwatch/about.txt
+            <span class="prompt">C:\WealthWatch&gt;</span> type about.txt
           </div>
           <div class="section-body">
             <div class="info-box">
@@ -95,7 +95,7 @@
 
         <section class="content-section" id="features">
           <div class="section-header">
-            <span class="prompt">$</span> wealthwatch --list-features
+            <span class="prompt">C:\WealthWatch&gt;</span> features --list
           </div>
           <div class="section-body">
             <pre class="feature-list">
@@ -138,7 +138,7 @@
 
         <section class="content-section" id="dashboard">
           <div class="section-header">
-            <span class="prompt">$</span> wealthwatch --dashboard
+            <span class="prompt">C:\WealthWatch&gt;</span> dashboard --view
           </div>
           <div class="section-body">
             <pre class="dashboard-view">
@@ -194,7 +194,7 @@
 
         <section class="content-section" id="stack">
           <div class="section-header">
-            <span class="prompt">$</span> cat /opt/wealthwatch/STACK.md
+            <span class="prompt">C:\WealthWatch&gt;</span> type STACK.md
           </div>
           <div class="section-body">
             <pre class="setup-guide">
@@ -246,12 +246,12 @@
 
         <section class="content-section" id="demo">
           <div class="section-header">
-            <span class="prompt">$</span> wealthwatch --interactive
+            <span class="prompt">C:\WealthWatch&gt;</span> run --interactive
           </div>
           <div class="section-body">
             <div class="demo-terminal">
               <div class="demo-prompt">
-                <span class="prompt-user">you@wealthwatch:</span><span class="prompt-path">~</span><span class="prompt-dollar">$</span>
+                <span class="prompt-user">C:\WealthWatch&gt;</span>
                 <input type="text" id="demo-input" placeholder="Try: quote AAPL, market, portfolio, news, help" autocomplete="off" spellcheck="false">
               </div>
               <div class="demo-output" id="demo-output"></div>
@@ -286,7 +286,7 @@
 
         <!-- Blinking cursor -->
         <div class="cursor-line">
-          <span class="prompt">$</span> <span class="cursor">_</span>
+          <span class="prompt">C:\WealthWatch&gt;</span> <span class="cursor">_</span>
         </div>
       </div>
     </div>

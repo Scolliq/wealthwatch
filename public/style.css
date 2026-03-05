@@ -114,33 +114,50 @@ body {
     0 4px 60px rgba(0, 0, 0, 0.5);
 }
 
+.terminal-frame {
+  border-radius: 0;
+}
+
 .terminal-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  background: #161b22;
-  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #333;
 }
 
-.terminal-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.terminal-buttons span {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.btn-close { background: #ff5f57; }
-.btn-min { background: #ffbd2e; }
-.btn-max { background: #28ca42; }
-
-.terminal-title {
-  color: #556677;
+.terminal-title-text {
+  color: #aaa;
   font-size: 12px;
+  font-weight: 700;
+}
+
+.terminal-controls {
+  display: flex;
+  gap: 0;
+}
+
+.ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 20px;
+  color: #888;
+  font-size: 12px;
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.ctrl-btn:hover {
+  background: #333;
+  color: #ccc;
+}
+
+.ctrl-close:hover {
+  background: #c42b1c;
+  color: #fff;
 }
 
 .terminal-body {
@@ -325,17 +342,8 @@ body {
 }
 
 .prompt-user {
-  color: var(--green);
-  font-weight: 700;
-}
-
-.prompt-path {
-  color: var(--cyan);
-  font-weight: 700;
-}
-
-.prompt-dollar {
-  color: var(--fg);
+  color: #aaa;
+  font-weight: 400;
   margin-right: 8px;
 }
 

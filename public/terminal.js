@@ -267,7 +267,7 @@ Type <span class="output-green">help</span> for available commands.`;
 
         const echo = document.createElement('div');
         echo.className = 'output-line cmd-echo';
-        echo.textContent = `$ ${val}`;
+        echo.textContent = `C:\\WealthWatch> ${val}`;
         demoOutput.appendChild(echo);
 
         if (result) {
