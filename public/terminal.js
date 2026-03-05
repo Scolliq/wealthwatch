@@ -12,9 +12,7 @@
 
   // ─── Data fetching ──────────────────────────────────────
 
-  const PROXY = 'https://corsproxy.io/?url=';
-  const YAHOO_QUOTE = 'https://query1.finance.yahoo.com/v7/finance/quote';
-  const YAHOO_CHART = 'https://query1.finance.yahoo.com/v8/finance/chart';
+  const API_BASE = '/api/quote';
 
   const cache = {};
   const CACHE_TTL = 30000; // 30 seconds
@@ -34,8 +32,7 @@
     const cached = getCached(key);
     if (cached) return cached;
 
-    const url = `${YAHOO_QUOTE}?symbols=${symbols.join(',')}`;
-    const res = await fetch(PROXY + encodeURIComponent(url));
+    const res = await fetch(`${API_BASE}?symbols=${symbols.join(',')}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     const results = json.quoteResponse?.result || [];
@@ -64,8 +61,7 @@
     const cached = getCached(key);
     if (cached) return cached;
 
-    const url = `${YAHOO_CHART}/${symbol}?interval=1d&range=1mo`;
-    const res = await fetch(PROXY + encodeURIComponent(url));
+    const res = await fetch(`${API_BASE}?symbols=${symbol}&type=chart`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     const result = json.chart?.result?.[0];
