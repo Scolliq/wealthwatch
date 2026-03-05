@@ -90,6 +90,11 @@ body {
   color: #1a3a1a;
 }
 
+#auth-status {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
 /* ─── Terminal (main) ──────────────────────────────────── */
 
 .terminal {
@@ -211,6 +216,130 @@ body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   white-space: pre;
+}
+
+/* ─── Chart Container (TradingView) ───────────────────── */
+
+.chart-container {
+  width: 100%;
+  height: 300px;
+  margin: 4px 0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.chart-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 0 4px;
+  font-size: 12px;
+}
+
+.chart-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chart-stat-label {
+  color: var(--fg-dim);
+}
+
+.chart-stat-value {
+  color: var(--fg-bright);
+  font-weight: 500;
+}
+
+/* ─── Portfolio Allocation Bar ────────────────────────── */
+
+.alloc-bar {
+  display: flex;
+  height: 20px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+}
+
+.alloc-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.alloc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.alloc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alloc-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+/* ─── Auth Form ───────────────────────────────────────── */
+
+.auth-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg-bright);
+  font-family: var(--font);
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+  width: 240px;
+  max-width: 100%;
+}
+
+.auth-input:focus {
+  border-color: var(--accent);
+}
+
+.auth-input::placeholder {
+  color: var(--fg-muted);
+}
+
+.auth-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 14px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.auth-btn:hover {
+  opacity: 0.9;
+}
+
+.auth-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  flex-wrap: wrap;
 }
 
 /* ─── TUI Tables ───────────────────────────────────────── */
@@ -370,14 +499,14 @@ body {
   .terminal { padding: 12px; }
   .tui-table { font-size: 11px; }
   .tui-table td, .tui-table th { padding: 3px 8px; }
+  .chart-container { height: 240px; }
 }
 
 /* ─── Responsive — Mobile ──────────────────────────────── */
 
 @media (max-width: 480px) {
   body {
-    font-size: 12px;
-    /* safe area for notched phones */
+    font-size: 11px;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -385,21 +514,22 @@ body {
   /* Status bar */
   .status-bar {
     font-size: 10px;
-    padding: 0 8px;
-    height: 32px;
+    padding: 0 6px;
+    height: 28px;
     padding-top: env(safe-area-inset-top);
   }
 
   .status-item#market-status { display: none; }
-  .status-right .status-sep:first-child { display: none; }
+  .status-right .status-sep:first-of-type { display: none; }
+  #auth-sep { display: none; }
 
   /* Terminal */
-  .terminal { padding: 8px; }
+  .terminal { padding: 6px; }
 
   /* Input — 16px prevents iOS zoom on focus */
   .input-line {
-    padding: 10px 0 2px;
-    margin-top: 10px;
+    padding: 8px 0 2px;
+    margin-top: 8px;
   }
 
   #cmd-input {
@@ -414,21 +544,25 @@ body {
   /* Slash commands — bigger tap targets */
   .slash-cmd {
     display: inline-block;
-    padding: 3px 2px;
+    padding: 4px 2px;
     -webkit-tap-highlight-color: rgba(95, 135, 255, 0.2);
   }
 
-  /* Tables */
-  .tui-table { font-size: 11px; }
+  /* Tables — tighter on mobile */
+  .tui-table { font-size: 10px; }
   .tui-table td, .tui-table th {
-    padding: 5px 6px;
+    padding: 4px 4px;
     white-space: nowrap;
   }
 
   /* Panels */
-  .tui-panel { margin: 4px 0; }
-  .tui-panel-title { font-size: 11px; padding: 5px 8px; }
-  .tui-panel-body { padding: 4px 6px; }
+  .tui-panel { margin: 3px 0; }
+  .tui-panel-title { font-size: 10px; padding: 4px 6px; }
+  .tui-panel-body { padding: 4px 4px; }
+
+  /* Charts */
+  .chart-container { height: 200px; }
+  .chart-stats { gap: 8px; font-size: 10px; }
 
   /* ASCII art — horizontal scroll instead of wrapping */
   .ascii-art {
@@ -438,7 +572,7 @@ body {
   }
 
   /* Ticker bar */
-  .ticker-bar { height: 28px; font-size: 11px; }
+  .ticker-bar { height: 24px; font-size: 10px; }
   .ticker-label { font-size: 9px; }
   .ticker-item { margin-right: 16px; }
 
@@ -450,5 +584,11 @@ body {
 
   /* Line spacing */
   #output .line { margin-bottom: 0; }
-  #output .line-blank { height: 6px; }
+  #output .line-blank { height: 5px; }
+
+  /* Auth */
+  .auth-input { width: 100%; font-size: 16px; padding: 8px; }
+  .auth-btn { width: 100%; padding: 10px; font-size: 13px; }
+  .auth-form-row { flex-direction: column; align-items: stretch; }
+  .alloc-legend { font-size: 10px; gap: 4px 10px; }
 }

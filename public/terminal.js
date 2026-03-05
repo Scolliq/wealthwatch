@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════
-// WealthWatch Terminal — TUI-style CLI with live market data
+// WealthWatch Terminal v2.0
+// TUI-style CLI with live market data, charts & Supabase auth
 // ═══════════════════════════════════════════════════════════
 
 (function () {
@@ -10,12 +11,58 @@
   const commandHistory = [];
   let historyIndex = -1;
 
+  // ─── Supabase Config ──────────────────────────────────
+  // 1. Go to supabase.com → create a free project
+  // 2. Go to Settings → API → copy URL and anon key
+  // 3. Paste them below
+  // 4. Run the SQL migration from supabase-schema.sql in the SQL editor
+
+  const SUPABASE_URL  = 'YOUR_SUPABASE_URL';   // e.g. https://xxxxx.supabase.co
+  const SUPABASE_ANON = 'YOUR_SUPABASE_ANON_KEY';
+
+  let sb = null;
+  let currentUser = null;
+
+  function supabaseEnabled() {
+    return SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON !== 'YOUR_SUPABASE_ANON_KEY';
+  }
+
+  if (supabaseEnabled() && typeof supabase !== 'undefined') {
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    sb.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        currentUser = data.session.user;
+        updateAuthUI();
+      }
+    });
+    sb.auth.onAuthStateChange((_event, session) => {
+      currentUser = session?.user || null;
+      updateAuthUI();
+    });
+  }
+
+  function updateAuthUI() {
+    const el = document.getElementById('auth-status');
+    const sep = document.getElementById('auth-sep');
+    if (!el) return;
+    if (currentUser) {
+      el.textContent = currentUser.email;
+      el.style.display = '';
+      if (sep) sep.style.display = '';
+    } else {
+      el.textContent = '';
+      el.style.display = 'none';
+      if (sep) sep.style.display = 'none';
+    }
+  }
+  updateAuthUI();
+
   // ─── Data fetching ──────────────────────────────────────
 
   const API_BASE = '/api/quote';
 
   const cache = {};
-  const CACHE_TTL = 30000; // 30 seconds
+  const CACHE_TTL = 30000;
 
   function getCached(key) {
     const entry = cache[key];
@@ -67,10 +114,38 @@
     const result = json.chart?.result?.[0];
     if (!result) throw new Error('No chart data');
 
-    const closes = result.indicators.quote[0].close.filter(v => v != null);
+    const timestamps = result.timestamp || [];
+    const quote = result.indicators.quote[0];
+    const closes = quote.close || [];
+    const opens = quote.open || [];
+    const highs = quote.high || [];
+    const lows = quote.low || [];
+    const volumes = quote.volume || [];
     const meta = result.meta;
 
-    const data = { closes, name: meta.shortName || symbol, price: meta.regularMarketPrice };
+    // Build OHLC data for lightweight-charts
+    const candles = [];
+    const lineData = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (closes[i] == null) continue;
+      const time = timestamps[i];
+      candles.push({
+        time,
+        open: opens[i] || closes[i],
+        high: highs[i] || closes[i],
+        low: lows[i] || closes[i],
+        close: closes[i],
+      });
+      lineData.push({ time, value: closes[i] });
+    }
+
+    const data = {
+      candles,
+      lineData,
+      closes: closes.filter(v => v != null),
+      name: meta.shortName || symbol,
+      price: meta.regularMarketPrice,
+    };
     setCache(key, data);
     return data;
   }
@@ -119,6 +194,12 @@
   const stockSymbols  = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'META', 'AMD'];
   const watchlistSymbols = ['MSFT', 'GOOGL', 'AMZN', 'META', 'AMD'];
 
+  // Allocation colors
+  const ALLOC_COLORS = [
+    '#5f87ff', '#5faf5f', '#d7af5f', '#d75f5f', '#af5faf',
+    '#5fafaf', '#ff875f', '#87afd7', '#d787af', '#afd75f',
+  ];
+
   // ─── Rendering ────────────────────────────────────────
 
   function print(html) {
@@ -153,7 +234,6 @@
     scrollToBottom();
   }
 
-  // Loading indicator
   let loadingEl = null;
   function showLoading(msg) {
     loadingEl = document.createElement('div');
@@ -231,9 +311,113 @@
       const idx = Math.round(((v - min) / range) * (bars.length - 1));
       return bars[idx];
     }).join('');
-    // color based on trend
     const trend = closes[closes.length - 1] >= closes[0] ? 'positive' : 'negative';
     return `<span class="${trend}">${spark}</span>`;
+  }
+
+  // ─── TradingView Chart Renderer ──────────────────────
+
+  function renderChart(containerId, chartData, symbol) {
+    const container = document.getElementById(containerId);
+    if (!container || typeof LightweightCharts === 'undefined') return;
+
+    const chart = LightweightCharts.createChart(container, {
+      layout: {
+        background: { color: '#111111' },
+        textColor: '#555',
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: '#1a1a1a' },
+        horzLines: { color: '#1a1a1a' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: '#5f87ff44', width: 1, style: 2 },
+        horzLine: { color: '#5f87ff44', width: 1, style: 2 },
+      },
+      rightPriceScale: {
+        borderColor: '#2a2a2a',
+      },
+      timeScale: {
+        borderColor: '#2a2a2a',
+        timeVisible: false,
+      },
+      handleScroll: { vertTouchDrag: false },
+    });
+
+    const trend = chartData.closes[chartData.closes.length - 1] >= chartData.closes[0];
+    const upColor = '#5faf5f';
+    const downColor = '#d75f5f';
+
+    // Area chart with gradient
+    const areaSeries = chart.addAreaSeries({
+      topColor: trend ? 'rgba(95, 175, 95, 0.3)' : 'rgba(215, 95, 95, 0.3)',
+      bottomColor: trend ? 'rgba(95, 175, 95, 0.02)' : 'rgba(215, 95, 95, 0.02)',
+      lineColor: trend ? upColor : downColor,
+      lineWidth: 2,
+      crosshairMarkerBackgroundColor: trend ? upColor : downColor,
+      crosshairMarkerBorderColor: '#fff',
+    });
+
+    areaSeries.setData(chartData.lineData);
+    chart.timeScale().fitContent();
+
+    // Resize handler
+    const ro = new ResizeObserver(() => {
+      chart.applyOptions({ width: container.clientWidth });
+    });
+    ro.observe(container);
+  }
+
+  // ─── Supabase helpers ──────────────────────────────────
+
+  async function getHoldings() {
+    if (!sb || !currentUser) return null;
+    const { data, error } = await sb
+      .from('holdings')
+      .select('*')
+      .order('added_at', { ascending: true });
+    if (error) throw error;
+    return data;
+  }
+
+  async function addHolding(symbol, qty, avgCost) {
+    if (!sb || !currentUser) throw new Error('Not logged in');
+    // Upsert — if symbol exists, update qty and avg cost
+    const { data: existing } = await sb
+      .from('holdings')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .eq('symbol', symbol)
+      .single();
+
+    if (existing) {
+      // Weighted average
+      const totalQty = existing.qty + qty;
+      const newAvg = ((existing.avg_cost * existing.qty) + (avgCost * qty)) / totalQty;
+      const { error } = await sb
+        .from('holdings')
+        .update({ qty: totalQty, avg_cost: newAvg })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await sb
+        .from('holdings')
+        .insert({ user_id: currentUser.id, symbol, qty, avg_cost: avgCost });
+      if (error) throw error;
+    }
+  }
+
+  async function removeHolding(symbol) {
+    if (!sb || !currentUser) throw new Error('Not logged in');
+    const { error } = await sb
+      .from('holdings')
+      .delete()
+      .eq('user_id', currentUser.id)
+      .eq('symbol', symbol);
+    if (error) throw error;
   }
 
   // ─── Boot ─────────────────────────────────────────────
@@ -254,23 +438,38 @@
       print(`<span class="c-blue c-bold">   ╚══╝╚══╝  ╚══════╝ ╚═╝  ╚═╝ ╚══════╝╚═╝   ╚═╝  ╚═╝</span>`);
       print(`<span class="c-dim">  ──────────────────────────────────────────────────────</span>`);
     }
-    print(`<span class="c-dim">  Terminal Finance Dashboard · v1.0</span>`);
+    print(`<span class="c-dim">  Terminal Finance Dashboard · v2.0</span>`);
     printBlank();
     print(`<span class="c-bright">  Commands:</span>`);
     printBlank();
     print(`    ${sc('/market')}        ${dim('Market overview & indices')}`);
     print(`    ${sc('/portfolio')}     ${dim('Portfolio positions & P/L')}`);
+    print(`    ${sc('/analytics')}     ${dim('Portfolio analytics & allocation')}`);
     print(`    ${sc('/quote')} ${dim('<SYM>')}   ${dim('Real-time stock quote')}`);
-    print(`    ${sc('/chart')} ${dim('<SYM>')}   ${dim('ASCII price chart (30d)')}`);
+    print(`    ${sc('/chart')} ${dim('<SYM>')}   ${dim('Interactive price chart (30d)')}`);
     print(`    ${sc('/watchlist')}     ${dim('Tracked tickers')}`);
     print(`    ${sc('/alerts')}        ${dim('Price alert status')}`);
     print(`    ${sc('/news')}          ${dim('Financial headlines')}`);
+    printBlank();
+    if (supabaseEnabled()) {
+      print(`  <span class="c-cyan">Account:</span>`);
+      print(`    ${sc('/signup')}        ${dim('Create account')}`);
+      print(`    ${sc('/login')}         ${dim('Sign in')}`);
+      print(`    ${sc('/logout')}        ${dim('Sign out')}`);
+      print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Add holding')}`);
+      print(`    ${sc('/remove')} ${dim('<SYM>')}             ${dim('Remove holding')}`);
+      printBlank();
+    }
     print(`    ${sc('/about')}         ${dim('About WealthWatch')}`);
-    print(`    ${sc('/stack')}         ${dim('Tech stack')}`);
     print(`    ${sc('/help')}          ${dim('All commands')}`);
     print(`    ${sc('/clear')}         ${dim('Clear terminal')}`);
     printBlank();
     print(`  ${dim('Click any command or type below. ↑↓ for history.')}`);
+    if (!supabaseEnabled()) {
+      printBlank();
+      print(`  ${dim('Supabase not configured — using demo portfolio.')}`);
+      print(`  ${dim('Set SUPABASE_URL & ANON_KEY in terminal.js to enable accounts.')}`);
+    }
     printBlank();
     bindSlashCommands();
     scrollToBottom();
@@ -281,16 +480,28 @@
   const commands = {
 
     '/help': function() {
+      const authCmds = supabaseEnabled() ? [
+        '',
+        bright('Account'),
+        `  ${sc('/signup')}                  ${dim('Create a new account')}`,
+        `  ${sc('/login')}                   ${dim('Sign in to your account')}`,
+        `  ${sc('/logout')}                  ${dim('Sign out')}`,
+        `  ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}   ${dim('Add a holding to portfolio')}`,
+        `  ${sc('/remove')} ${dim('<SYM>')}              ${dim('Remove a holding')}`,
+      ] : [];
+
       printLines([
         bright('Commands'),
         '',
         `  ${sc('/market')}                  ${dim('Live market indices & crypto')}`,
         `  ${sc('/portfolio')}               ${dim('Portfolio positions & P/L')}`,
+        `  ${sc('/analytics')}               ${dim('Portfolio analytics & charts')}`,
         `  ${sc('/quote')} ${dim('<ticker>')}          ${dim('Real-time stock quote')}`,
-        `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('ASCII price chart (30d)')}`,
+        `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('Interactive price chart (30d)')}`,
         `  ${sc('/watchlist')}               ${dim('Tracked tickers with sparklines')}`,
         `  ${sc('/alerts')}                  ${dim('Active price alerts')}`,
         `  ${sc('/news')}                    ${dim('Latest financial headlines')}`,
+        ...authCmds,
         '',
         `  ${sc('/about')}                   ${dim('About WealthWatch')}`,
         `  ${sc('/stack')}                   ${dim('Tech stack & architecture')}`,
@@ -329,7 +540,6 @@
 
       } catch (e) {
         hideLoading();
-        // Fallback to mock
         const indices = [
           ['S&P 500',    '$5,842.31',  1.24],
           ['DOW 30',     '$43,890.12', 0.87],
@@ -358,16 +568,35 @@
     },
 
     '/portfolio': async function() {
-      showLoading('Fetching portfolio prices...');
+      showLoading('Fetching portfolio...');
 
-      const holdings = [
-        { sym: 'AAPL',    qty: 50,  avgCost: 171.20 },
-        { sym: 'NVDA',    qty: 25,  avgCost: 480.50 },
-        { sym: 'TSLA',    qty: 10,  avgCost: 248.90 },
-        { sym: 'BTC-USD', qty: 0.5, avgCost: 42100  },
-      ];
+      let holdings;
+      let isUserPortfolio = false;
 
-      let rows, totalValue = 0, totalPL = 0;
+      // Try Supabase first
+      if (sb && currentUser) {
+        try {
+          const dbHoldings = await getHoldings();
+          if (dbHoldings && dbHoldings.length > 0) {
+            holdings = dbHoldings.map(h => ({ sym: h.symbol, qty: h.qty, avgCost: h.avg_cost }));
+            isUserPortfolio = true;
+          }
+        } catch (e) {
+          // Fall through to demo
+        }
+      }
+
+      // Demo portfolio fallback
+      if (!holdings) {
+        holdings = [
+          { sym: 'AAPL',    qty: 50,  avgCost: 171.20 },
+          { sym: 'NVDA',    qty: 25,  avgCost: 480.50 },
+          { sym: 'TSLA',    qty: 10,  avgCost: 248.90 },
+          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100  },
+        ];
+      }
+
+      let rows, totalValue = 0, totalPL = 0, totalCost = 0;
       let usedLive = false;
 
       try {
@@ -382,6 +611,7 @@
           const plPct = ((last / h.avgCost) - 1) * 100;
           totalValue += last * h.qty;
           totalPL += pl;
+          totalCost += h.avgCost * h.qty;
           const plStr = pl >= 0 ? pos(`+$${Math.abs(pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`) : neg(`-$${Math.abs(pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
           const pctStr = plPct >= 0 ? pos(`+${plPct.toFixed(1)}%`) : neg(`${plPct.toFixed(1)}%`);
           return [tn(h.sym), String(h.qty), fmtPrice(h.avgCost), fmtPrice(last), plStr, pctStr];
@@ -395,6 +625,7 @@
           const plPct = ((last / h.avgCost) - 1) * 100;
           totalValue += last * h.qty;
           totalPL += pl;
+          totalCost += h.avgCost * h.qty;
           const plStr = pl >= 0 ? pos(`+$${Math.abs(pl).toFixed(2)}`) : neg(`-$${Math.abs(pl).toFixed(2)}`);
           const pctStr = plPct >= 0 ? pos(`+${plPct.toFixed(1)}%`) : neg(`${plPct.toFixed(1)}%`);
           return [tn(h.sym), String(h.qty), fmtPrice(h.avgCost), fmtPrice(last), plStr, pctStr];
@@ -404,12 +635,126 @@
       const totalPLStr = totalPL >= 0
         ? pos(`<strong>+$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`)
         : neg(`<strong>-$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`);
-      const footer = ['', '', '', `<strong>${fmtPrice(totalValue)}</strong>`, totalPLStr, ''];
+      const totalPctStr = totalCost > 0
+        ? (totalPL >= 0 ? pos(`+${((totalPL / totalCost) * 100).toFixed(1)}%`) : neg(`${((totalPL / totalCost) * 100).toFixed(1)}%`))
+        : '';
+      const footer = ['', '', '', `<strong>${fmtPrice(totalValue)}</strong>`, totalPLStr, totalPctStr];
 
-      const badge = usedLive ? 'LIVE' : 'DEMO';
+      const badge = isUserPortfolio ? (usedLive ? 'LIVE' : 'SAVED') : (usedLive ? 'DEMO · LIVE' : 'DEMO');
       printRaw(panel('Portfolio', table(['Ticker', 'Qty', 'Avg Cost', 'Last', 'P/L', '%'], rows, footer), badge));
       printBlank();
-      print(dim(`${usedLive ? 'Live prices' : 'Demo data'}  ·  ${sc('/chart')} <ticker> for price history`));
+
+      if (!isUserPortfolio && supabaseEnabled()) {
+        if (!currentUser) {
+          print(dim(`Demo portfolio shown. ${sc('/login')} or ${sc('/signup')} to track your own.`));
+        } else {
+          print(dim(`No holdings found. Use ${sc('/add')} AAPL 10 150.00 to add stocks.`));
+        }
+      } else if (!isUserPortfolio) {
+        print(dim(`Demo portfolio. Configure Supabase to save your own holdings.`));
+      }
+
+      print(dim(`${sc('/analytics')} for allocation & stats  ·  ${sc('/chart')} <ticker> for charts`));
+      printBlank();
+      bindSlashCommands();
+      scrollToBottom();
+    },
+
+    '/analytics': async function() {
+      showLoading('Analyzing portfolio...');
+
+      let holdings;
+      let isUserPortfolio = false;
+
+      if (sb && currentUser) {
+        try {
+          const dbHoldings = await getHoldings();
+          if (dbHoldings && dbHoldings.length > 0) {
+            holdings = dbHoldings.map(h => ({ sym: h.symbol, qty: h.qty, avgCost: h.avg_cost }));
+            isUserPortfolio = true;
+          }
+        } catch (e) {}
+      }
+
+      if (!holdings) {
+        holdings = [
+          { sym: 'AAPL',    qty: 50,  avgCost: 171.20 },
+          { sym: 'NVDA',    qty: 25,  avgCost: 480.50 },
+          { sym: 'TSLA',    qty: 10,  avgCost: 248.90 },
+          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100  },
+        ];
+      }
+
+      try {
+        const data = await fetchQuotes(holdings.map(h => h.sym));
+        hideLoading();
+
+        // Calculate position values
+        const positions = holdings.map(h => {
+          const q = data[h.sym];
+          const price = q ? q.price : mockData[h.sym]?.price || 0;
+          const value = price * h.qty;
+          const pl = (price - h.avgCost) * h.qty;
+          const plPct = ((price / h.avgCost) - 1) * 100;
+          const change = q ? q.change : mockData[h.sym]?.change || 0;
+          return { sym: h.sym, qty: h.qty, avgCost: h.avgCost, price, value, pl, plPct, dayChange: change };
+        });
+
+        const totalValue = positions.reduce((s, p) => s + p.value, 0);
+        const totalPL = positions.reduce((s, p) => s + p.pl, 0);
+        const totalCost = positions.reduce((s, p) => s + p.avgCost * p.qty, 0);
+        const totalPLPct = totalCost > 0 ? ((totalPL / totalCost) * 100) : 0;
+        const dayPL = positions.reduce((s, p) => s + (p.value * p.dayChange / 100), 0);
+
+        // Summary stats
+        const summaryRows = [
+          ['Total Value', `<strong>${fmtPrice(totalValue)}</strong>`],
+          ['Total P/L', totalPL >= 0 ? pos(`+$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${totalPLPct.toFixed(1)}%)`) : neg(`-$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${totalPLPct.toFixed(1)}%)`)],
+          ['Day P/L', dayPL >= 0 ? pos(`+$${Math.abs(dayPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`) : neg(`-$${Math.abs(dayPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`)],
+          ['Positions', String(positions.length)],
+          ['Largest', positions.length ? tn(positions.reduce((a, b) => a.value > b.value ? a : b).sym) : '—'],
+        ];
+        printRaw(panel('Summary', table(['Metric', 'Value'], summaryRows), isUserPortfolio ? 'YOUR PORTFOLIO' : 'DEMO'));
+
+        // Allocation bar
+        let allocHtml = '<div class="alloc-bar">';
+        positions.forEach((p, i) => {
+          const pct = totalValue > 0 ? (p.value / totalValue * 100) : 0;
+          const color = ALLOC_COLORS[i % ALLOC_COLORS.length];
+          allocHtml += `<div class="alloc-segment" style="width:${pct}%;background:${color}" title="${p.sym}: ${pct.toFixed(1)}%">${pct >= 8 ? p.sym : ''}</div>`;
+        });
+        allocHtml += '</div>';
+
+        allocHtml += '<div class="alloc-legend">';
+        positions.forEach((p, i) => {
+          const pct = totalValue > 0 ? (p.value / totalValue * 100) : 0;
+          const color = ALLOC_COLORS[i % ALLOC_COLORS.length];
+          allocHtml += `<span class="alloc-legend-item"><span class="alloc-swatch" style="background:${color}"></span>${p.sym} ${pct.toFixed(1)}%</span>`;
+        });
+        allocHtml += '</div>';
+        printRaw(panel('Allocation', allocHtml));
+
+        // Top gainers / losers
+        const sorted = [...positions].sort((a, b) => b.plPct - a.plPct);
+        const gainLossRows = sorted.map(p => {
+          const plStr = p.pl >= 0
+            ? pos(`+$${Math.abs(p.pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`)
+            : neg(`-$${Math.abs(p.pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
+          const pctStr = p.plPct >= 0
+            ? pos(`+${p.plPct.toFixed(1)}%`)
+            : neg(`${p.plPct.toFixed(1)}%`);
+          return [tn(p.sym), fmtPrice(p.value), plStr, pctStr];
+        });
+        printRaw(panel('Performance', table(['Ticker', 'Value', 'P/L', '%'], gainLossRows)));
+
+      } catch (e) {
+        hideLoading();
+        printLines([
+          `<span class="c-red">Failed to load analytics</span>`,
+          dim('Could not fetch current prices. Try again later.'),
+        ]);
+      }
+
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -486,6 +831,125 @@
       scrollToBottom();
     },
 
+    '/signup': async function() {
+      if (!supabaseEnabled()) {
+        printLines([
+          `<span class="c-red">Supabase not configured</span>`,
+          dim('Set SUPABASE_URL and SUPABASE_ANON in terminal.js'),
+          dim('Get a free project at supabase.com'),
+        ]);
+        return;
+      }
+      if (currentUser) {
+        printLines([
+          `<span class="c-yellow">Already signed in as</span> ${currentUser.email}`,
+          `Use ${sc('/logout')} to sign out first.`,
+        ]);
+        return;
+      }
+
+      // Render inline form
+      const formId = 'signup-form-' + Date.now();
+      printRaw(`<div id="${formId}" class="tui-panel" style="margin:6px 0">
+        <div class="tui-panel-title" style="background:var(--bg-hover)">SIGN UP</div>
+        <div class="tui-panel-body">
+          <div class="auth-form-row"><span class="c-dim" style="width:60px">Email:</span><input type="email" class="auth-input" id="${formId}-email" placeholder="you@email.com"></div>
+          <div class="auth-form-row"><span class="c-dim" style="width:60px">Pass:</span><input type="password" class="auth-input" id="${formId}-pass" placeholder="min 6 characters"></div>
+          <div class="auth-form-row" style="margin-top:8px"><button class="auth-btn" id="${formId}-btn">CREATE ACCOUNT</button></div>
+          <div id="${formId}-msg" style="margin-top:6px"></div>
+        </div>
+      </div>`);
+
+      scrollToBottom();
+
+      const btn = document.getElementById(`${formId}-btn`);
+      btn.addEventListener('click', async () => {
+        const email = document.getElementById(`${formId}-email`).value.trim();
+        const pass = document.getElementById(`${formId}-pass`).value;
+        const msgEl = document.getElementById(`${formId}-msg`);
+
+        if (!email || !pass) { msgEl.innerHTML = `<span class="c-red">Email and password required</span>`; return; }
+        if (pass.length < 6) { msgEl.innerHTML = `<span class="c-red">Password must be at least 6 characters</span>`; return; }
+
+        msgEl.innerHTML = `<span class="c-dim loading-dots">Creating account</span>`;
+        const { data, error } = await sb.auth.signUp({ email, password: pass });
+
+        if (error) {
+          msgEl.innerHTML = `<span class="c-red">${error.message}</span>`;
+        } else if (data.user && !data.session) {
+          msgEl.innerHTML = `<span class="c-green">Check your email for a confirmation link!</span>`;
+        } else {
+          msgEl.innerHTML = `<span class="c-green">Account created! You're signed in.</span>`;
+        }
+        scrollToBottom();
+      });
+    },
+
+    '/login': async function() {
+      if (!supabaseEnabled()) {
+        printLines([
+          `<span class="c-red">Supabase not configured</span>`,
+          dim('Set SUPABASE_URL and SUPABASE_ANON in terminal.js'),
+        ]);
+        return;
+      }
+      if (currentUser) {
+        printLines([
+          `<span class="c-yellow">Already signed in as</span> ${currentUser.email}`,
+          `Use ${sc('/logout')} to sign out first.`,
+        ]);
+        return;
+      }
+
+      const formId = 'login-form-' + Date.now();
+      printRaw(`<div id="${formId}" class="tui-panel" style="margin:6px 0">
+        <div class="tui-panel-title" style="background:var(--bg-hover)">SIGN IN</div>
+        <div class="tui-panel-body">
+          <div class="auth-form-row"><span class="c-dim" style="width:60px">Email:</span><input type="email" class="auth-input" id="${formId}-email" placeholder="you@email.com"></div>
+          <div class="auth-form-row"><span class="c-dim" style="width:60px">Pass:</span><input type="password" class="auth-input" id="${formId}-pass" placeholder="password"></div>
+          <div class="auth-form-row" style="margin-top:8px"><button class="auth-btn" id="${formId}-btn">SIGN IN</button></div>
+          <div id="${formId}-msg" style="margin-top:6px"></div>
+        </div>
+      </div>`);
+
+      scrollToBottom();
+
+      const btn = document.getElementById(`${formId}-btn`);
+      btn.addEventListener('click', async () => {
+        const email = document.getElementById(`${formId}-email`).value.trim();
+        const pass = document.getElementById(`${formId}-pass`).value;
+        const msgEl = document.getElementById(`${formId}-msg`);
+
+        if (!email || !pass) { msgEl.innerHTML = `<span class="c-red">Email and password required</span>`; return; }
+
+        msgEl.innerHTML = `<span class="c-dim loading-dots">Signing in</span>`;
+        const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+
+        if (error) {
+          msgEl.innerHTML = `<span class="c-red">${error.message}</span>`;
+        } else {
+          msgEl.innerHTML = `<span class="c-green">Signed in! Use ${sc('/portfolio')} to view your holdings.</span>`;
+          bindSlashCommands();
+        }
+        scrollToBottom();
+      });
+    },
+
+    '/logout': async function() {
+      if (!supabaseEnabled()) {
+        printLines([`<span class="c-red">Supabase not configured</span>`]);
+        return;
+      }
+      if (!currentUser) {
+        printLines([`<span class="c-yellow">Not signed in.</span> Use ${sc('/login')} to sign in.`]);
+        return;
+      }
+      await sb.auth.signOut();
+      printLines([
+        `<span class="c-green">Signed out successfully.</span>`,
+      ]);
+    },
+
     '/about': function() {
       printLines([
         bright('About WealthWatch'),
@@ -497,10 +961,12 @@
         '',
         `  <span class="c-cyan">Markets</span>      Real-time quotes via Yahoo Finance`,
         `  <span class="c-cyan">Portfolio</span>    Track positions with live P/L`,
+        `  <span class="c-cyan">Charts</span>       Interactive TradingView charts`,
+        `  <span class="c-cyan">Analytics</span>    Allocation, performance & stats`,
+        `  <span class="c-cyan">Accounts</span>     Supabase auth — save your portfolio`,
         `  <span class="c-cyan">Watchlist</span>    Monitor favorites with sparklines`,
         `  <span class="c-cyan">Alerts</span>       Price triggers with polling`,
         `  <span class="c-cyan">News</span>         Aggregated headlines with sentiment`,
-        `  <span class="c-cyan">Charts</span>       ASCII charts from real price data`,
         '',
         `  ${dim('GitHub:')}   github.com/Scolliq/wealthwatch`,
         `  ${dim('License:')}  MIT`,
@@ -510,14 +976,23 @@
 
     '/stack': function() {
       const arch = isMobile ? [
-        `  <span class="c-cyan">BROWSER</span> <span class="c-dim">→</span> <span class="c-cyan">VERCEL API</span> <span class="c-dim">→</span> <span class="c-cyan">YAHOO</span>`,
-        `  <span class="c-dim">(Terminal)  (/api/quote)  (Finance)</span>`,
+        `  <span class="c-cyan">BROWSER</span> <span class="c-dim">→</span> <span class="c-cyan">VERCEL</span> <span class="c-dim">→</span> <span class="c-cyan">YAHOO</span>`,
+        `  <span class="c-dim">(Terminal)  (API)    (Finance)</span>`,
+        `  <span class="c-dim">      ↕</span>`,
+        `  <span class="c-cyan">SUPABASE</span>`,
+        `  <span class="c-dim">(Auth + DB)</span>`,
       ] : [
         `  <span class="c-dim">┌──────────┐    ┌──────────┐    ┌──────────┐</span>`,
         `  <span class="c-dim">│</span> <span class="c-cyan">BROWSER</span>  <span class="c-dim">│───▶│</span> <span class="c-cyan">VERCEL</span>   <span class="c-dim">│───▶│</span> <span class="c-cyan">YAHOO</span>    <span class="c-dim">│</span>`,
         `  <span class="c-dim">│</span> Terminal  <span class="c-dim">│    │</span> API      <span class="c-dim">│    │</span> Finance  <span class="c-dim">│</span>`,
         `  <span class="c-dim">│</span> UI / JS   <span class="c-dim">│◀───│</span> /api/    <span class="c-dim">│◀───│</span> API v7/8 <span class="c-dim">│</span>`,
-        `  <span class="c-dim">└──────────┘    └──────────┘    └──────────┘</span>`,
+        `  <span class="c-dim">└────┬─────┘    └──────────┘    └──────────┘</span>`,
+        `  <span class="c-dim">     │</span>`,
+        `  <span class="c-dim">     ▼</span>`,
+        `  <span class="c-dim">┌──────────┐</span>`,
+        `  <span class="c-dim">│</span> <span class="c-cyan">SUPABASE</span> <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> Auth+DB  <span class="c-dim">│</span>`,
+        `  <span class="c-dim">└──────────┘</span>`,
       ];
       printLines([
         bright('Architecture'),
@@ -527,23 +1002,17 @@
         bright('Tech Stack'),
         '',
         `  <span class="c-cyan">Frontend</span>`,
-        `  <span class="c-dim">├──</span> HTML/CSS/JS       Vanilla, no framework`,
-        `  <span class="c-dim">├──</span> Terminal UI        TUI aesthetic`,
-        `  <span class="c-dim">├──</span> Yahoo Finance      Client-side API via CORS proxy`,
-        `  <span class="c-dim">├──</span> 30s cache          Avoid rate limiting`,
-        `  <span class="c-dim">└──</span> Vercel             Static hosting`,
+        `  <span class="c-dim">├──</span> HTML/CSS/JS          Vanilla, no framework`,
+        `  <span class="c-dim">├──</span> Lightweight Charts   TradingView charting`,
+        `  <span class="c-dim">├──</span> Supabase JS          Auth & database`,
+        `  <span class="c-dim">├──</span> Yahoo Finance        Real-time market data`,
+        `  <span class="c-dim">├──</span> 30s cache            Avoid rate limiting`,
+        `  <span class="c-dim">└──</span> Vercel               Static hosting`,
         '',
-        `  <span class="c-cyan">Backend (Telegram Bot)</span>`,
-        `  <span class="c-dim">├──</span> Python 3.11+       Core runtime`,
-        `  <span class="c-dim">├──</span> yfinance           Market data feeds`,
-        `  <span class="c-dim">├──</span> APScheduler        Background alert polling`,
-        `  <span class="c-dim">└──</span> JSON storage       Lightweight persistence`,
-        '',
-        `  <span class="c-cyan">Data Flow</span>`,
-        `  <span class="c-dim">├──</span> Browser fetches Yahoo Finance v7 (quotes)`,
-        `  <span class="c-dim">├──</span> Browser fetches Yahoo Finance v8 (charts)`,
-        `  <span class="c-dim">├──</span> CORS proxy handles cross-origin requests`,
-        `  <span class="c-dim">└──</span> Fallback to demo data on failure`,
+        `  <span class="c-cyan">Backend</span>`,
+        `  <span class="c-dim">├──</span> Supabase             Auth, PostgreSQL, RLS`,
+        `  <span class="c-dim">├──</span> Vercel Serverless    CORS proxy for Yahoo`,
+        `  <span class="c-dim">└──</span> Yahoo Finance v8     Quote + chart data`,
       ]);
     },
 
@@ -593,11 +1062,10 @@
 
       printRaw(panel(`${sym} · ${q.name}`, table(['Metric', 'Value', ''], rows), 'LIVE'));
       printBlank();
-      print(dim(`Live data  ·  ${sc('/chart ' + sym)} for price history`));
+      print(dim(`Live data  ·  ${sc('/chart ' + sym)} for interactive chart`));
 
     } catch (e) {
       hideLoading();
-      // Try mock data
       const m = mockData[sym];
       if (m) {
         const rows = [
@@ -639,81 +1107,40 @@
       const data = await fetchChartData(sym);
       hideLoading();
 
-      const closes = data.closes;
-      if (closes.length < 2) {
+      if (data.closes.length < 2) {
         printLines([`<span class="c-red">Not enough data for:</span> ${sym}`]);
         return;
       }
 
-      // Build ASCII chart from real data
-      const chartHeight = isMobile ? 6 : 8;
-      const chartWidth = isMobile ? 28 : 50;
-      const min = Math.min(...closes);
-      const max = Math.max(...closes);
-      const range = max - min || 1;
-
-      // Resample to chartWidth points
-      const sampled = [];
-      for (let i = 0; i < chartWidth; i++) {
-        const idx = Math.round(i * (closes.length - 1) / (chartWidth - 1));
-        sampled.push(closes[idx]);
-      }
-
-      // Build chart grid
-      const lines = [];
-      for (let row = chartHeight - 1; row >= 0; row--) {
-        const threshold = min + (row / (chartHeight - 1)) * range;
-        const padLen = isMobile ? 8 : 12;
-        const priceLabel = fmtPrice(threshold).padStart(padLen);
-        let line = priceLabel + ' ┤';
-
-        for (let col = 0; col < chartWidth; col++) {
-          const val = sampled[col];
-          const normalizedVal = (val - min) / range * (chartHeight - 1);
-          const normalizedThreshold = row;
-
-          if (Math.abs(normalizedVal - normalizedThreshold) < 0.5) {
-            // Check connections
-            const prevVal = col > 0 ? (sampled[col - 1] - min) / range * (chartHeight - 1) : normalizedVal;
-            const nextVal = col < chartWidth - 1 ? (sampled[col + 1] - min) / range * (chartHeight - 1) : normalizedVal;
-
-            if (Math.round(normalizedVal) > Math.round(prevVal)) line += '╱';
-            else if (Math.round(normalizedVal) < Math.round(prevVal)) line += '╲';
-            else line += '─';
-          } else {
-            line += ' ';
-          }
-        }
-        lines.push(line);
-      }
-
-      // X-axis
-      const axispad = ' '.repeat(padLen + 1);
-      lines.push(axispad + '└' + '─'.repeat(chartWidth));
-      const daysAgo = closes.length;
-      const gap = Math.max(chartWidth - 20, 2);
-      lines.push(dim(axispad + ` -${daysAgo}d` + ' '.repeat(gap) + 'now'));
-
-      const trend = closes[closes.length - 1] >= closes[0] ? 'positive' : 'negative';
-      const changeVal = ((closes[closes.length - 1] / closes[0]) - 1) * 100;
+      const trend = data.closes[data.closes.length - 1] >= data.closes[0];
+      const changeVal = ((data.closes[data.closes.length - 1] / data.closes[0]) - 1) * 100;
       const changeStr = changeVal >= 0 ? `+${changeVal.toFixed(2)}%` : `${changeVal.toFixed(2)}%`;
+      const trendCls = trend ? 'positive' : 'negative';
 
-      printRaw(panel(
-        `${sym} · 30D CHART`,
-        `<div class="ascii-art"><span class="${trend}">${lines.join('\n')}</span></div>`,
-        'LIVE'
-      ));
-      printBlank();
-      if (isMobile) {
-        print(`  ${fmtPrice(closes[closes.length - 1])} ${dim('last')} · <span class="${trend}">${changeStr}</span> ${dim('30d')}`);
-        print(`  ${fmtPrice(max)} ${dim('high')} · ${fmtPrice(min)} ${dim('low')}`);
-      } else {
-        print(`  ${fmtPrice(closes[closes.length - 1])} ${dim('last')}  ·  <span class="${trend}">${changeStr}</span> ${dim('30d')}  ·  ${fmtPrice(max)} ${dim('high')}  ·  ${fmtPrice(min)} ${dim('low')}`);
-      }
+      const min = Math.min(...data.closes);
+      const max = Math.max(...data.closes);
+      const last = data.closes[data.closes.length - 1];
+
+      // Create chart container
+      const chartId = 'tv-chart-' + Date.now();
+      const statsHtml = `
+        <div class="chart-stats">
+          <span class="chart-stat"><span class="chart-stat-label">Last</span> <span class="chart-stat-value">${fmtPrice(last)}</span></span>
+          <span class="chart-stat"><span class="chart-stat-label">30d</span> <span class="${trendCls}">${changeStr}</span></span>
+          <span class="chart-stat"><span class="chart-stat-label">High</span> <span class="chart-stat-value">${fmtPrice(max)}</span></span>
+          <span class="chart-stat"><span class="chart-stat-label">Low</span> <span class="chart-stat-value">${fmtPrice(min)}</span></span>
+        </div>
+      `;
+
+      const chartHtml = `<div class="chart-container" id="${chartId}"></div>${statsHtml}`;
+      printRaw(panel(`${sym} · 30D CHART`, chartHtml, 'LIVE'));
+
+      // Render TradingView chart after DOM insertion
+      requestAnimationFrame(() => renderChart(chartId, data, sym));
 
     } catch (e) {
       hideLoading();
-      // Fallback to static chart
+      // Fallback to ASCII
       const m = mockData[sym];
       if (m) {
         const b = m.price;
@@ -741,6 +1168,90 @@
     scrollToBottom();
   }
 
+  async function addCmd(parts) {
+    if (!supabaseEnabled()) {
+      printLines([`<span class="c-red">Supabase not configured.</span> Set URL & key in terminal.js`]);
+      return;
+    }
+    if (!currentUser) {
+      printLines([`<span class="c-yellow">Sign in first.</span> Use ${sc('/login')} or ${sc('/signup')}`]);
+      return;
+    }
+
+    // /add AAPL 10 150.00
+    if (parts.length < 4) {
+      printLines([
+        `<span class="c-red">Usage:</span> /add <SYMBOL> <QTY> <AVG_COST>`,
+        `${dim('Example:')} ${sc('/add AAPL 10 150.00')}`,
+        '',
+        dim('Adds shares to your portfolio. If you already hold the ticker,'),
+        dim('it will calculate a weighted average cost basis.'),
+      ]);
+      return;
+    }
+
+    const sym = parts[1].toUpperCase();
+    const qty = parseFloat(parts[2]);
+    const cost = parseFloat(parts[3]);
+
+    if (isNaN(qty) || qty <= 0) {
+      printLines([`<span class="c-red">Invalid quantity:</span> ${parts[2]}`]);
+      return;
+    }
+    if (isNaN(cost) || cost <= 0) {
+      printLines([`<span class="c-red">Invalid cost:</span> ${parts[3]}`]);
+      return;
+    }
+
+    showLoading(`Adding ${sym}...`);
+    try {
+      await addHolding(sym, qty, cost);
+      hideLoading();
+      printLines([
+        `<span class="c-green">Added ${qty} shares of ${sym} at ${fmtPrice(cost)}</span>`,
+        dim(`Use ${sc('/portfolio')} to see your updated holdings.`),
+      ]);
+    } catch (e) {
+      hideLoading();
+      printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+    }
+  }
+
+  async function removeCmd(parts) {
+    if (!supabaseEnabled()) {
+      printLines([`<span class="c-red">Supabase not configured.</span>`]);
+      return;
+    }
+    if (!currentUser) {
+      printLines([`<span class="c-yellow">Sign in first.</span> Use ${sc('/login')}`]);
+      return;
+    }
+
+    if (parts.length < 2) {
+      printLines([
+        `<span class="c-red">Usage:</span> /remove <SYMBOL>`,
+        `${dim('Example:')} ${sc('/remove TSLA')}`,
+        '',
+        dim('Removes a ticker entirely from your portfolio.'),
+      ]);
+      return;
+    }
+
+    const sym = parts[1].toUpperCase();
+    showLoading(`Removing ${sym}...`);
+    try {
+      await removeHolding(sym);
+      hideLoading();
+      printLines([
+        `<span class="c-green">Removed ${sym} from portfolio.</span>`,
+        dim(`Use ${sc('/portfolio')} to see your updated holdings.`),
+      ]);
+    } catch (e) {
+      hideLoading();
+      printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+    }
+  }
+
   // ─── Router ───────────────────────────────────────────
 
   function runCommand(raw) {
@@ -757,11 +1268,16 @@
     let cmd = parts[0].toLowerCase();
 
     if (!cmd.startsWith('/') && commands['/' + cmd]) cmd = '/' + cmd;
+    if (!cmd.startsWith('/')) cmd = '/' + cmd;
 
     if (cmd === '/quote' || cmd === '/q' || cmd === '/price') {
       quoteCmd(parts[1]);
     } else if (cmd === '/chart' || cmd === '/c') {
       chartCmd(parts[1]);
+    } else if (cmd === '/add') {
+      addCmd(parts);
+    } else if (cmd === '/remove' || cmd === '/rm') {
+      removeCmd(parts);
     } else if (commands[cmd]) {
       commands[cmd]();
     } else {
@@ -790,7 +1306,9 @@
   });
 
   document.addEventListener('click', (e) => {
-    if (!window.getSelection().toString() && !e.target.closest('a')) input.focus();
+    if (!window.getSelection().toString() && !e.target.closest('a') && !e.target.closest('input') && !e.target.closest('button')) {
+      input.focus();
+    }
   });
 
   // ─── Clock ────────────────────────────────────────────
@@ -855,7 +1373,6 @@
     bar.appendChild(tc);
   }
 
-  // Initial ticker bar with mock data, then update with live
   const mockTickers = [
     { sym: 'AAPL', price: 189.84, change: 1.24 },
     { sym: 'NVDA', price: 721.33, change: 3.87 },
@@ -871,12 +1388,10 @@
     { sym: '^DJI', price: 43890, change: 0.87 },
   ];
 
-  // Render mock first
   const mockTickerData = {};
   mockTickers.forEach(t => { mockTickerData[t.sym] = { price: t.price, change: t.change }; });
   renderTickerBar(mockTickerData);
 
-  // Then fetch live and update
   async function refreshTickerBar() {
     try {
       const data = await fetchQuotes(tickerSymbols);
@@ -887,7 +1402,7 @@
   }
 
   refreshTickerBar();
-  setInterval(refreshTickerBar, 60000); // Refresh every 60s
+  setInterval(refreshTickerBar, 60000);
 
   // ─── Boot ─────────────────────────────────────────────
   boot();

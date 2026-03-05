@@ -10,6 +10,10 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>$</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- TradingView Lightweight Charts -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -17,12 +21,14 @@
   <header class="status-bar">
     <div class="status-left">
       <span class="status-brand">[$] WealthWatch</span>
-      <span class="status-sep">│</span>
-      <span class="status-item">Terminal v1.0</span>
+      <span class="status-sep">|</span>
+      <span class="status-item">Terminal v2.0</span>
     </div>
     <div class="status-right">
+      <span class="status-item" id="auth-status"></span>
+      <span class="status-sep" id="auth-sep">|</span>
       <span class="status-item" id="market-status">● MARKET OPEN</span>
-      <span class="status-sep">│</span>
+      <span class="status-sep">|</span>
       <span class="status-item" id="clock"></span>
     </div>
   </header>
