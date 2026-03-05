@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════
-// WealthWatch Terminal — CLI with modern card rendering
+// WealthWatch Terminal — TUI-style CLI
 // ═══════════════════════════════════════════════════════════
 
 (function () {
   'use strict';
 
   const output = document.getElementById('output');
-  const input = document.getElementById('cmd-input');
+  const input  = document.getElementById('cmd-input');
   const commandHistory = [];
   let historyIndex = -1;
 
@@ -56,12 +56,13 @@
   }
 
   function sc(cmd) { return `<span class="slash-cmd">${cmd}</span>`; }
-  function dim(t) { return `<span class="c-dim">${t}</span>`; }
+  function dim(t)  { return `<span class="c-dim">${t}</span>`; }
+  function bright(t) { return `<span class="c-bright c-bold">${t}</span>`; }
 
-  // ─── Card builder ─────────────────────────────────────
+  // ─── TUI Panel builder ──────────────────────────────────
 
-  function card(title, content) {
-    return `<div class="out-card"><div class="out-card-header">${title}</div>${content}</div>`;
+  function panel(title, content) {
+    return `<div class="tui-panel"><div class="tui-panel-title">${title}</div><div class="tui-panel-body">${content}</div></div>`;
   }
 
   function table(headers, rows, footerRow) {
@@ -71,37 +72,44 @@
     ).join('');
     let f = '';
     if (footerRow) {
-      f = '<tr class="out-row-total">' + footerRow.map(cell => `<td>${cell}</td>`).join('') + '</tr>';
+      f = '<tr class="tui-row-total">' + footerRow.map(cell => `<td>${cell}</td>`).join('') + '</tr>';
     }
-    return `<table class="out-table"><thead>${h}</thead><tbody>${r}${f}</tbody></table>`;
+    return `<table class="tui-table"><thead>${h}</thead><tbody>${r}${f}</tbody></table>`;
   }
 
   function tag(type, text) { return `<span class="tag tag-${type}">${text}</span>`; }
-  function pos(t) { return `<span class="positive">${t}</span>`; }
-  function neg(t) { return `<span class="negative">${t}</span>`; }
-  function tn(t) { return `<span class="ticker-name">${t}</span>`; }
+  function pos(t)  { return `<span class="positive">${t}</span>`; }
+  function neg(t)  { return `<span class="negative">${t}</span>`; }
+  function tn(t)   { return `<span class="ticker-name">${t}</span>`; }
 
   // ─── Boot ─────────────────────────────────────────────
 
   function boot() {
-    print(`<span class="c-blue c-bold">Welcome to WealthWatch</span>`);
-    print(`<span class="c-muted">Your terminal-powered finance dashboard. Type a command to begin.</span>`);
+    print('');
+    print(`<span class="c-blue c-bold">  ██╗    ██╗ ███████╗  █████╗  ██╗  ████████╗██╗  ██╗</span>`);
+    print(`<span class="c-blue c-bold">  ██║    ██║ ██╔════╝ ██╔══██╗ ██║  ╚══██╔══╝██║  ██║</span>`);
+    print(`<span class="c-blue c-bold">  ██║ █╗ ██║ █████╗   ███████║ ██║     ██║   ███████║</span>`);
+    print(`<span class="c-blue c-bold">  ██║███╗██║ ██╔══╝   ██╔══██║ ██║     ██║   ██╔══██║</span>`);
+    print(`<span class="c-blue c-bold">  ╚███╔███╔╝ ███████╗ ██║  ██║ ███████╗██║   ██║  ██║</span>`);
+    print(`<span class="c-blue c-bold">   ╚══╝╚══╝  ╚══════╝ ╚═╝  ╚═╝ ╚══════╝╚═╝   ╚═╝  ╚═╝</span>`);
+    print(`<span class="c-dim">  ──────────────────────────────────────────────────────</span>`);
+    print(`<span class="c-dim">  Terminal Finance Dashboard · v1.0</span>`);
     printBlank();
-    print(`<span class="c-muted">Commands:</span>`);
+    print(`<span class="c-bright">  Commands:</span>`);
     printBlank();
-    print(`  ${sc('/market')}         Market overview & indices`);
-    print(`  ${sc('/portfolio')}      Portfolio positions & P/L`);
-    print(`  ${sc('/quote AAPL')}     Stock / crypto quote`);
-    print(`  ${sc('/chart NVDA')}     ASCII price chart`);
-    print(`  ${sc('/watchlist')}      Tracked tickers`);
-    print(`  ${sc('/alerts')}         Price alert status`);
-    print(`  ${sc('/news')}           Financial headlines`);
-    print(`  ${sc('/about')}          About WealthWatch`);
-    print(`  ${sc('/stack')}          Tech stack & architecture`);
-    print(`  ${sc('/help')}           All commands`);
-    print(`  ${sc('/clear')}          Clear terminal`);
+    print(`    ${sc('/market')}        ${dim('Market overview & indices')}`);
+    print(`    ${sc('/portfolio')}     ${dim('Portfolio positions & P/L')}`);
+    print(`    ${sc('/quote')} ${dim('<SYM>')}   ${dim('Stock / crypto quote')}`);
+    print(`    ${sc('/chart')} ${dim('<SYM>')}   ${dim('ASCII price chart')}`);
+    print(`    ${sc('/watchlist')}     ${dim('Tracked tickers')}`);
+    print(`    ${sc('/alerts')}        ${dim('Price alert status')}`);
+    print(`    ${sc('/news')}          ${dim('Financial headlines')}`);
+    print(`    ${sc('/about')}         ${dim('About WealthWatch')}`);
+    print(`    ${sc('/stack')}         ${dim('Tech stack')}`);
+    print(`    ${sc('/help')}          ${dim('All commands')}`);
+    print(`    ${sc('/clear')}         ${dim('Clear terminal')}`);
     printBlank();
-    print(`${dim('Click any')} ${sc('/command')} ${dim('or type below. Arrow keys for history.')}`);
+    print(`  ${dim('Click any command or type below. ↑↓ for history.')}`);
     printBlank();
     bindSlashCommands();
     scrollToBottom();
@@ -110,17 +118,17 @@
   // ─── Ticker data ──────────────────────────────────────
 
   const tickerData = {
-    AAPL:  { name: 'Apple Inc.',          price: 189.84, change: 1.24, high: 191.02, low: 187.33, vol: '52.3M',  cap: '2.94T' },
-    NVDA:  { name: 'NVIDIA Corporation',  price: 721.33, change: 3.87, high: 728.50, low: 712.10, vol: '41.8M',  cap: '1.78T' },
-    MSFT:  { name: 'Microsoft Corp.',     price: 415.20, change: 1.15, high: 418.90, low: 411.05, vol: '22.1M',  cap: '3.08T' },
-    TSLA:  { name: 'Tesla Inc.',          price: 231.45, change: -2.14, high: 238.20, low: 229.80, vol: '78.4M', cap: '735B' },
-    GOOGL: { name: 'Alphabet Inc.',       price: 152.87, change: 0.82, high: 154.10, low: 151.22, vol: '28.7M',  cap: '1.91T' },
-    AMZN:  { name: 'Amazon.com Inc.',     price: 178.12, change: -0.31, high: 180.44, low: 176.88, vol: '34.2M', cap: '1.86T' },
-    META:  { name: 'Meta Platforms',      price: 501.33, change: 2.08, high: 507.12, low: 498.60, vol: '18.5M',  cap: '1.28T' },
-    AMD:   { name: 'AMD Inc.',            price: 168.90, change: -1.42, high: 172.33, low: 167.15, vol: '45.1M', cap: '273B' },
-    SPY:   { name: 'SPDR S&P 500 ETF',   price: 584.23, change: 1.24, high: 586.10, low: 581.05, vol: '68.2M', cap: '538B' },
-    'BTC-USD': { name: 'Bitcoin',         price: 67843,  change: 2.31, high: 68900, low: 66200, vol: '28.4B',  cap: '1.33T' },
-    'ETH-USD': { name: 'Ethereum',        price: 3521,   change: 1.87, high: 3580, low: 3455, vol: '14.1B',   cap: '423B' },
+    AAPL:      { name: 'Apple Inc.',          price: 189.84, change: 1.24,  high: 191.02, low: 187.33, vol: '52.3M',  cap: '2.94T' },
+    NVDA:      { name: 'NVIDIA Corporation',  price: 721.33, change: 3.87,  high: 728.50, low: 712.10, vol: '41.8M',  cap: '1.78T' },
+    MSFT:      { name: 'Microsoft Corp.',     price: 415.20, change: 1.15,  high: 418.90, low: 411.05, vol: '22.1M',  cap: '3.08T' },
+    TSLA:      { name: 'Tesla Inc.',          price: 231.45, change: -2.14, high: 238.20, low: 229.80, vol: '78.4M',  cap: '735B' },
+    GOOGL:     { name: 'Alphabet Inc.',       price: 152.87, change: 0.82,  high: 154.10, low: 151.22, vol: '28.7M',  cap: '1.91T' },
+    AMZN:      { name: 'Amazon.com Inc.',     price: 178.12, change: -0.31, high: 180.44, low: 176.88, vol: '34.2M',  cap: '1.86T' },
+    META:      { name: 'Meta Platforms',      price: 501.33, change: 2.08,  high: 507.12, low: 498.60, vol: '18.5M',  cap: '1.28T' },
+    AMD:       { name: 'AMD Inc.',            price: 168.90, change: -1.42, high: 172.33, low: 167.15, vol: '45.1M',  cap: '273B' },
+    SPY:       { name: 'SPDR S&P 500 ETF',   price: 584.23, change: 1.24,  high: 586.10, low: 581.05, vol: '68.2M',  cap: '538B' },
+    'BTC-USD': { name: 'Bitcoin',             price: 67843,  change: 2.31,  high: 68900,  low: 66200,  vol: '28.4B',  cap: '1.33T' },
+    'ETH-USD': { name: 'Ethereum',            price: 3521,   change: 1.87,  high: 3580,   low: 3455,   vol: '14.1B',  cap: '423B' },
   };
 
   function fmtPrice(p) { return p >= 1000 ? '$' + p.toLocaleString() : '$' + p.toFixed(2); }
@@ -137,22 +145,22 @@
 
     '/help': function() {
       printLines([
-        `<span class="c-blue c-bold">Available Commands</span>`,
+        bright('Commands'),
         '',
-        `  ${sc('/market')}                  Live market indices & crypto`,
-        `  ${sc('/portfolio')}               Portfolio positions & P/L`,
-        `  ${sc('/quote')} ${dim('<ticker>')}          Real-time stock quote`,
-        `  ${sc('/chart')} ${dim('<ticker>')}          ASCII price chart (30d)`,
-        `  ${sc('/watchlist')}               Tracked tickers with sparklines`,
-        `  ${sc('/alerts')}                  Active price alerts`,
-        `  ${sc('/news')}                    Latest financial headlines`,
+        `  ${sc('/market')}                  ${dim('Live market indices & crypto')}`,
+        `  ${sc('/portfolio')}               ${dim('Portfolio positions & P/L')}`,
+        `  ${sc('/quote')} ${dim('<ticker>')}          ${dim('Real-time stock quote')}`,
+        `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('ASCII price chart (30d)')}`,
+        `  ${sc('/watchlist')}               ${dim('Tracked tickers with sparklines')}`,
+        `  ${sc('/alerts')}                  ${dim('Active price alerts')}`,
+        `  ${sc('/news')}                    ${dim('Latest financial headlines')}`,
         '',
-        `  ${sc('/about')}                   About WealthWatch`,
-        `  ${sc('/stack')}                   Tech stack & architecture`,
-        `  ${sc('/help')}                    This help menu`,
-        `  ${sc('/clear')}                   Clear terminal`,
+        `  ${sc('/about')}                   ${dim('About WealthWatch')}`,
+        `  ${sc('/stack')}                   ${dim('Tech stack & architecture')}`,
+        `  ${sc('/help')}                    ${dim('This help menu')}`,
+        `  ${sc('/clear')}                   ${dim('Clear terminal')}`,
         '',
-        `${dim('Tip: Click any /command or type it. Arrow ↑↓ for history.')}`,
+        dim('Tip: Click any command or type it. Arrow ↑↓ for history.'),
       ]);
     },
 
@@ -174,10 +182,10 @@
         tn(name), `<span class="price">${price}</span>`, fmtChange(chg)
       ]);
 
-      printRaw(card('Market Overview', table(['Index', 'Price', 'Change'], mkRows(indices))));
-      printRaw(card('Crypto', table(['Asset', 'Price', 'Change'], mkRows(crypto))));
+      printRaw(panel('Indices', table(['Index', 'Price', 'Change'], mkRows(indices))));
+      printRaw(panel('Crypto', table(['Asset', 'Price', 'Change'], mkRows(crypto))));
       printBlank();
-      print(dim(`Updated: just now  ·  Source: Yahoo Finance  ·  Try ${sc('/quote AAPL')}`));
+      print(dim(`Updated: just now  ·  Source: Yahoo Finance  ·  ${sc('/quote')} <ticker> for details`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -192,9 +200,9 @@
       ];
       const footer = ['', '', '', '<strong>Total</strong>', pos('<strong>$89,412.50</strong>'), pos('<strong>+$1,247.30</strong>')];
 
-      printRaw(card('Portfolio', table(['Ticker', 'Qty', 'Avg Cost', 'Last', 'P/L', '%'], rows, footer)));
+      printRaw(panel('Portfolio', table(['Ticker', 'Qty', 'Avg Cost', 'Last', 'P/L', '%'], rows, footer)));
       printBlank();
-      print(dim(`Sample data  ·  Try ${sc('/chart AAPL')} for price history`));
+      print(dim(`Sample data  ·  ${sc('/chart')} <ticker> for price history`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -209,7 +217,7 @@
         [tn('AMD'),   '$168.90', fmtChange(-1.42),  '<span class="c-dim">█▇▆▅▄▃▂▃▄▃▂▁▂▃</span>'],
       ];
 
-      printRaw(card('Watchlist', table(['Ticker', 'Price', 'Change', '30d'], rows)));
+      printRaw(panel('Watchlist', table(['Ticker', 'Price', 'Change', '30d'], rows)));
       printBlank();
       print(dim(`5 tickers tracked  ·  ${sc('/quote')} <ticker> for details`));
       printBlank();
@@ -219,12 +227,12 @@
 
     '/alerts': function() {
       const rows = [
-        [tag('neutral', '!'), tn('NVDA'),    'Above $750.00',  tag('neutral', 'watching')],
-        [tag('neutral', '!'), tn('BTC-USD'), 'Above $70,000',  tag('neutral', 'watching')],
-        [tag('bull', '✓'),    tn('AAPL'),    'Above $185.00',  tag('bull', 'triggered')],
+        [tag('neutral', '!'), tn('NVDA'),    'Above $750.00',  tag('neutral', 'WATCHING')],
+        [tag('neutral', '!'), tn('BTC-USD'), 'Above $70,000',  tag('neutral', 'WATCHING')],
+        [tag('bull', '✓'),    tn('AAPL'),    'Above $185.00',  tag('bull', 'TRIGGERED')],
       ];
 
-      printRaw(card('Price Alerts', table(['', 'Ticker', 'Condition', 'Status'], rows)));
+      printRaw(panel('Price Alerts', table(['', 'Ticker', 'Condition', 'Status'], rows)));
       printBlank();
       print(dim('3 active alerts  ·  Polling every 60s'));
       printBlank();
@@ -233,15 +241,15 @@
 
     '/news': function() {
       const items = [
-        [tag('bull', 'bull'),    'Fed signals rate cuts ahead as inflation cools'],
-        [tag('bull', 'bull'),    'NVIDIA beats earnings expectations, AI demand surges'],
-        [tag('bear', 'bear'),    'Treasury yields spike on labor market data'],
-        [tag('neutral', '—'),    'Apple unveils new AI features at developer event'],
-        [tag('bull', 'bull'),    'S&P 500 hits new all-time high'],
-        [tag('bear', 'bear'),    'Oil prices jump on Middle East tensions'],
+        [tag('bull', 'BULL'),    'Fed signals rate cuts ahead as inflation cools'],
+        [tag('bull', 'BULL'),    'NVIDIA beats earnings expectations, AI demand surges'],
+        [tag('bear', 'BEAR'),    'Treasury yields spike on labor market data'],
+        [tag('neutral', '——'),   'Apple unveils new AI features at developer event'],
+        [tag('bull', 'BULL'),    'S&P 500 hits new all-time high'],
+        [tag('bear', 'BEAR'),    'Oil prices jump on Middle East tensions'],
       ];
 
-      printRaw(card('Financial News', table(['Signal', 'Headline'], items)));
+      printRaw(panel('Financial News', table(['Signal', 'Headline'], items)));
       printBlank();
       print(dim('Source: aggregated financial feeds'));
       printBlank();
@@ -250,61 +258,54 @@
 
     '/about': function() {
       printLines([
-        `<span class="c-blue c-bold">About WealthWatch</span>`,
+        bright('About WealthWatch'),
         '',
-        `WealthWatch is a terminal-style finance dashboard for`,
-        `tracking markets, portfolios, and financial data in real time.`,
+        '  WealthWatch is a terminal-style finance dashboard for',
+        '  tracking markets, portfolios, and financial data.',
         '',
-        `No bloat. No clutter. Just raw data at your fingertips —`,
-        `the way Wall Street terminals were meant to feel.`,
+        `  <span class="c-dim">No bloat. No clutter. Just data.</span>`,
         '',
-        `  <span class="c-blue">Markets</span>      Real-time quotes for stocks, ETFs, crypto`,
-        `  <span class="c-blue">Portfolio</span>    Track positions with live P/L calculations`,
-        `  <span class="c-blue">Watchlist</span>    Monitor favorites with sparkline charts`,
-        `  <span class="c-blue">Alerts</span>       Price triggers with 60s polling`,
-        `  <span class="c-blue">News</span>         Aggregated headlines with sentiment tags`,
-        `  <span class="c-blue">Charts</span>       ASCII sparklines and candlestick views`,
+        `  <span class="c-cyan">Markets</span>      Real-time quotes for stocks, ETFs, crypto`,
+        `  <span class="c-cyan">Portfolio</span>    Track positions with live P/L calculations`,
+        `  <span class="c-cyan">Watchlist</span>    Monitor favorites with sparkline charts`,
+        `  <span class="c-cyan">Alerts</span>       Price triggers with 60s polling`,
+        `  <span class="c-cyan">News</span>         Aggregated headlines with sentiment tags`,
+        `  <span class="c-cyan">Charts</span>       ASCII sparklines and candlestick views`,
         '',
-        `${dim('GitHub:')}   github.com/Scolliq/wealthwatch`,
-        `${dim('License:')}  MIT`,
-        `${dim('Status:')}   <span class="c-green">● Operational</span>`,
+        `  ${dim('GitHub:')}   github.com/Scolliq/wealthwatch`,
+        `  ${dim('License:')}  MIT`,
+        `  ${dim('Status:')}   <span class="c-green">● Operational</span>`,
       ]);
     },
 
     '/stack': function() {
       printLines([
-        `<span class="c-blue c-bold">Architecture</span>`,
+        bright('Architecture'),
         '',
-        `  ┌──────────┐    ┌──────────┐    ┌──────────┐`,
-        `  │ <span class="c-blue">FRONTEND</span> │───▶│ <span class="c-blue">API</span>      │───▶│ <span class="c-blue">DATA</span>     │`,
-        `  │ Terminal  │    │ Server   │    │ Feeds    │`,
-        `  │ UI / Web  │◀───│ WebSocket│◀───│ Yahoo    │`,
-        `  └──────────┘    └──────────┘    └──────────┘`,
+        `  <span class="c-dim">┌──────────┐    ┌──────────┐    ┌──────────┐</span>`,
+        `  <span class="c-dim">│</span> <span class="c-cyan">FRONTEND</span> <span class="c-dim">│───▶│</span> <span class="c-cyan">API</span>      <span class="c-dim">│───▶│</span> <span class="c-cyan">DATA</span>     <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> Terminal  <span class="c-dim">│    │</span> Server   <span class="c-dim">│    │</span> Feeds    <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> UI / Web  <span class="c-dim">│◀───│</span> WebSocket<span class="c-dim">│◀───│</span> Yahoo    <span class="c-dim">│</span>`,
+        `  <span class="c-dim">└──────────┘    └──────────┘    └──────────┘</span>`,
         '',
-        `<span class="c-blue c-bold">Tech Stack</span>`,
+        bright('Tech Stack'),
         '',
-        `  <span class="c-blue">Frontend</span>`,
-        `  ├── HTML/CSS/JS       Vanilla, no framework bloat`,
-        `  ├── Terminal UI        CRT aesthetic + modern cards`,
-        `  ├── Responsive         Works on mobile + desktop`,
-        `  └── Vercel             Zero-config static hosting`,
+        `  <span class="c-cyan">Frontend</span>`,
+        `  <span class="c-dim">├──</span> HTML/CSS/JS       Vanilla, no framework`,
+        `  <span class="c-dim">├──</span> Terminal UI        TUI aesthetic`,
+        `  <span class="c-dim">├──</span> Responsive         Mobile + desktop`,
+        `  <span class="c-dim">└──</span> Vercel             Static hosting`,
         '',
-        `  <span class="c-blue">Backend</span>`,
-        `  ├── Python 3.11+       Core runtime`,
-        `  ├── yfinance           Market data feeds`,
-        `  ├── APScheduler        Background alert polling`,
-        `  └── JSON storage       Lightweight persistence`,
+        `  <span class="c-cyan">Backend</span>`,
+        `  <span class="c-dim">├──</span> Python 3.11+       Core runtime`,
+        `  <span class="c-dim">├──</span> yfinance           Market data feeds`,
+        `  <span class="c-dim">├──</span> APScheduler        Background alert polling`,
+        `  <span class="c-dim">└──</span> JSON storage       Lightweight persistence`,
         '',
-        `  <span class="c-blue">Data Sources</span>`,
-        `  ├── Yahoo Finance      Stocks, ETFs, crypto, indices`,
-        `  ├── NewsAPI            Financial headlines`,
-        `  └── Alpha Vantage      Extended market data`,
-        '',
-        `<span class="c-blue c-bold">Design Philosophy</span>`,
-        '',
-        `  ${dim('>')} "Information density over eye candy"`,
-        `  ${dim('>')} "Bloomberg terminal meets hacker aesthetic"`,
-        `  ${dim('>')} "Every pixel earns its place"`,
+        `  <span class="c-cyan">Data Sources</span>`,
+        `  <span class="c-dim">├──</span> Yahoo Finance      Stocks, ETFs, crypto`,
+        `  <span class="c-dim">├──</span> NewsAPI            Financial headlines`,
+        `  <span class="c-dim">└──</span> Alpha Vantage      Extended market data`,
       ]);
     },
 
@@ -318,7 +319,7 @@
   function quoteCmd(ticker) {
     if (!ticker) {
       printLines([
-        `<span class="c-red">Usage:</span> /quote &lt;ticker&gt;`,
+        `<span class="c-red">Usage:</span> /quote <ticker>`,
         `${dim('Example:')} ${sc('/quote AAPL')}`,
         '',
         dim('Available: AAPL, NVDA, MSFT, TSLA, GOOGL, AMZN, META, AMD, SPY, BTC-USD, ETH-USD'),
@@ -342,12 +343,12 @@
       ['Market Cap', '$' + t.cap, ''],
     ];
 
-    printRaw(card(
+    printRaw(panel(
       `${ticker.toUpperCase()} · ${t.name}`,
       table(['Metric', 'Value', ''], rows)
     ));
     printBlank();
-    print(dim(`Demo data  ·  Try ${sc('/chart ' + ticker.toUpperCase())} for price history`));
+    print(dim(`Demo data  ·  ${sc('/chart ' + ticker.toUpperCase())} for price history`));
     printBlank();
     bindSlashCommands();
     scrollToBottom();
@@ -356,7 +357,7 @@
   function chartCmd(ticker) {
     if (!ticker) {
       printLines([
-        `<span class="c-red">Usage:</span> /chart &lt;ticker&gt;`,
+        `<span class="c-red">Usage:</span> /chart <ticker>`,
         `${dim('Example:')} ${sc('/chart NVDA')}`,
       ]);
       return;
@@ -368,18 +369,18 @@
     }
     const b = t.price;
     const chartLines = [
-      `  ${fmtPrice(b*1.04).padStart(8)} ┤                                      ╭──`,
-      `  ${fmtPrice(b*1.02).padStart(8)} ┤                           ╭──╮   ╭──╯`,
-      `  ${fmtPrice(b*1.00).padStart(8)} ┤           ╭───╮      ╭────╯  ╰───╯`,
-      `  ${fmtPrice(b*0.98).padStart(8)} ┤      ╭────╯   ╰──────╯`,
-      `  ${fmtPrice(b*0.96).padStart(8)} ┤ ╭────╯`,
-      `  ${fmtPrice(b*0.94).padStart(8)} ┤─╯`,
-      `           └──────────────────────────────────────`,
-      `  ${dim('         -30d              -15d              now')}`,
+      `  ${fmtPrice(b*1.04).padStart(10)} ┤                                      ╭──`,
+      `  ${fmtPrice(b*1.02).padStart(10)} ┤                           ╭──╮   ╭──╯`,
+      `  ${fmtPrice(b*1.00).padStart(10)} ┤           ╭───╮      ╭────╯  ╰───╯`,
+      `  ${fmtPrice(b*0.98).padStart(10)} ┤      ╭────╯   ╰──────╯`,
+      `  ${fmtPrice(b*0.96).padStart(10)} ┤ ╭────╯`,
+      `  ${fmtPrice(b*0.94).padStart(10)} ┤─╯`,
+      `             └──────────────────────────────────────`,
+      `  ${dim('           -30d              -15d              now')}`,
     ];
 
-    printRaw(card(
-      `${ticker.toUpperCase()} · Price Chart (30D)`,
+    printRaw(panel(
+      `${ticker.toUpperCase()} · 30D CHART`,
       `<div style="padding:4px 0">${chartLines.join('\n')}</div>`
     ));
     printBlank();
@@ -393,7 +394,7 @@
     const trimmed = raw.trim();
     if (!trimmed) return;
 
-    print(`<span class="cmd-echo">&gt; ${trimmed}</span>`);
+    print(`<span class="cmd-echo">❯ ${trimmed}</span>`);
     printBlank();
 
     commandHistory.push(trimmed);
@@ -412,7 +413,7 @@
       commands[cmd]();
     } else {
       printLines([
-        `<span class="c-red">'${trimmed}'</span> is not a recognized command.`,
+        `<span class="c-red">unknown command:</span> ${trimmed}`,
         `Type ${sc('/help')} to see available commands.`,
       ]);
     }
@@ -435,22 +436,42 @@
     }
   });
 
-  // Click anywhere focuses input
   document.addEventListener('click', (e) => {
     if (!window.getSelection().toString() && !e.target.closest('a')) input.focus();
   });
 
-  // Nav slash commands
-  document.querySelectorAll('.slash-nav').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.preventDefault();
-      const cmd = el.dataset.cmd;
-      if (cmd) {
-        document.getElementById('terminal-section').scrollIntoView({ behavior: 'smooth' });
-        setTimeout(() => runCommand(cmd), 300);
-      }
-    });
-  });
+  // ─── Clock ────────────────────────────────────────────
+
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ─── Market status ────────────────────────────────────
+
+  function updateMarketStatus() {
+    const now = new Date();
+    const day = now.getDay();
+    const hour = now.getHours();
+    const min = now.getMinutes();
+    const time = hour * 60 + min;
+    const el = document.getElementById('market-status');
+
+    if (day >= 1 && day <= 5 && time >= 570 && time < 960) {
+      el.textContent = '● MARKET OPEN';
+      el.style.color = '#1a3a1a';
+    } else {
+      el.textContent = '○ MARKET CLOSED';
+      el.style.color = '#3a1a1a';
+    }
+  }
+  updateMarketStatus();
+  setInterval(updateMarketStatus, 60000);
 
   // ─── Ticker bar ───────────────────────────────────────
 
