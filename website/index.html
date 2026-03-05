@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WealthWatch - Terminal Finance Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>$</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="scanlines"></div>
+  <div class="crt">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <span class="top-left">WealthWatch v1.0.0</span>
+      <span class="top-right">SESSION: <span id="session-id"></span> | <span id="clock"></span></span>
+    </div>
+
+    <!-- Main terminal frame -->
+    <div class="terminal-frame">
+      <div class="terminal-header">
+        <div class="terminal-buttons">
+          <span class="btn-close"></span>
+          <span class="btn-min"></span>
+          <span class="btn-max"></span>
+        </div>
+        <span class="terminal-title">user@wealthwatch:~$</span>
+      </div>
+
+      <div class="terminal-body" id="terminal">
+        <!-- ASCII Banner -->
+        <pre class="ascii-banner" id="banner">
+ __        __         _ _   _  __        __    _       _
+ \ \      / /__  __ _| | |_| |_\ \      / /_ _| |_ ___| |__
+  \ \ /\ / / _ \/ _` | | __| '_ \ \ /\ / / _` | __/ __| '_ \
+   \ V  V /  __/ (_| | | |_| | | \ V  V / (_| | || (__| | | |
+    \_/\_/ \___|\__,_|_|\__|_| |_|\_/\_/ \__,_|\__\___|_| |_|
+        </pre>
+        <div class="tagline">[ Real-Time Finance Terminal for the Modern Investor ]</div>
+        <div class="divider">════════════════════════════════════════════════════════════════</div>
+
+        <!-- Navigation -->
+        <nav class="nav-section" id="nav">
+          <div class="nav-prompt">&gt; SELECT MODULE:</div>
+          <div class="nav-items">
+            <a href="#about" class="nav-item active" data-section="about">[1] ABOUT</a>
+            <a href="#features" class="nav-item" data-section="features">[2] FEATURES</a>
+            <a href="#dashboard" class="nav-item" data-section="dashboard">[3] DASHBOARD</a>
+            <a href="#stack" class="nav-item" data-section="stack">[4] TECH STACK</a>
+            <a href="#demo" class="nav-item" data-section="demo">[5] LIVE DEMO</a>
+          </div>
+        </nav>
+
+        <div class="divider thin">────────────────────────────────────────────────────────────────</div>
+
+        <!-- Content sections -->
+        <section class="content-section active" id="about">
+          <div class="section-header">
+            <span class="prompt">$</span> cat /etc/wealthwatch/about.txt
+          </div>
+          <div class="section-body">
+            <div class="info-box">
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   WealthWatch is a terminal-inspired finance dashboard   │
+│   for tracking markets, portfolios, and financial data   │
+│   in real time.                                          │
+│                                                          │
+│   No bloat. No clutter. Just raw data at your            │
+│   fingertips -- the way Wall Street terminals were       │
+│   meant to feel.                                         │
+│                                                          │
+│   ┌────────────┐  ┌────────────┐  ┌────────────┐        │
+│   │  MARKETS   │  │ PORTFOLIO  │  │   ALERTS   │        │
+│   │  ~~~~~~~~  │  │  ~~~~~~~~  │  │  ~~~~~~~~  │        │
+│   │  Real-time │  │  Track P&L │  │  Price     │        │
+│   │  quotes    │  │  positions │  │  triggers  │        │
+│   └────────────┘  └────────────┘  └────────────┘        │
+│                                                          │
+│   ┌────────────┐  ┌────────────┐  ┌────────────┐        │
+│   │  WATCHLIST │  │    NEWS    │  │   CHARTS   │        │
+│   │  ~~~~~~~~  │  │  ~~~~~~~~  │  │  ~~~~~~~~  │        │
+│   │  Track     │  │  Headlines │  │  ASCII     │        │
+│   │  favorites │  │  &amp; feeds  │  │  sparklines│        │
+│   └────────────┘  └────────────┘  └────────────┘        │
+│                                                          │
+│   STATUS: OPERATIONAL          UPTIME: 99.7%             │
+│   LATENCY: &lt;50ms               DATA: Real-time feeds     │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+            </div>
+          </div>
+        </section>
+
+        <section class="content-section" id="features">
+          <div class="section-header">
+            <span class="prompt">$</span> wealthwatch --list-features
+          </div>
+          <div class="section-body">
+            <pre class="feature-list">
+┌─── MARKET DATA ──────────────────────────────────────────┐
+│                                                          │
+│  [*] Real-time quotes    Stocks, ETFs, crypto, indices   │
+│  [*] Market overview     S&P500, DOW, NASDAQ, VIX        │
+│  [*] Ticker search       Find any symbol instantly        │
+│  [*] ASCII charts        Sparkline &amp; candlestick views   │
+│                                                          │
+├─── PORTFOLIO ENGINE ─────────────────────────────────────┤
+│                                                          │
+│  [*] Position tracking   Buy/sell with cost basis         │
+│  [*] Live P&L            Real-time profit/loss calc       │
+│  [*] Multi-asset         Stocks, crypto, ETFs, options    │
+│  [*] Performance         Daily, weekly, all-time stats    │
+│                                                          │
+├─── WATCHLIST ────────────────────────────────────────────┤
+│                                                          │
+│  [*] Custom lists        Track your favorite tickers      │
+│  [*] Price changes       Movement at a glance             │
+│  [*] Heatmaps            ASCII sector heatmap view        │
+│                                                          │
+├─── ALERT SYSTEM ─────────────────────────────────────────┤
+│                                                          │
+│  [*] Price triggers      Above/below target alerts        │
+│  [*] Notifications       Browser push alerts              │
+│  [*] 60s polling         Checks prices every minute       │
+│                                                          │
+├─── NEWS FEED ────────────────────────────────────────────┤
+│                                                          │
+│  [*] Financial news      Aggregated market headlines      │
+│  [*] Topic search        Filter by keyword or company     │
+│  [*] Sentiment           Bull/bear signal tagging         │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+            </pre>
+          </div>
+        </section>
+
+        <section class="content-section" id="dashboard">
+          <div class="section-header">
+            <span class="prompt">$</span> wealthwatch --dashboard
+          </div>
+          <div class="section-body">
+            <pre class="dashboard-view">
+┌─── MARKET OVERVIEW ──────────────────────────────────────┐
+│                                                          │
+│  S&P 500    <span class="hl-green">5,842.31  +1.24%  ▲</span>  ████████████████░░   │
+│  DOW        <span class="hl-green">43,890.12 +0.87%  ▲</span>  ███████████████░░░   │
+│  NASDAQ     <span class="hl-green">18,563.77 +1.67%  ▲</span>  █████████████████░   │
+│  RUSSELL    <span class="hl-red">2,198.45  -0.32%  ▼</span>  ██████████░░░░░░░░   │
+│  VIX        <span class="hl-yellow">14.82     -2.1%   ─</span>  █████░░░░░░░░░░░░░   │
+│                                                          │
+├─── YOUR PORTFOLIO ───────────────────────────────────────┤
+│                                                          │
+│  TICKER   QTY    AVG      LAST      P&L       %         │
+│  ─────────────────────────────────────────────────────   │
+│  AAPL     50   $171.20  $189.84  <span class="hl-green">+$932.00   +10.9%</span>    │
+│  NVDA     25   $480.50  $721.33  <span class="hl-green">+$6,020.75 +50.1%</span>    │
+│  TSLA     10   $248.90  $231.45  <span class="hl-red">-$174.50    -7.0%</span>    │
+│  BTC-USD  0.5  $42,100  $67,843  <span class="hl-green">+$12,871   +30.6%</span>    │
+│  ─────────────────────────────────────────────────────   │
+│  TOTAL VALUE: $89,412.50    DAY P&L: <span class="hl-green">+$1,247.30</span>         │
+│                                                          │
+├─── AAPL PRICE (30D) ────────────────────────────────────┤
+│                                                          │
+│  $192 ┤                                          ╭──     │
+│  $188 ┤                               ╭──╮   ╭──╯       │
+│  $184 ┤               ╭───╮      ╭────╯  ╰───╯          │
+│  $180 ┤          ╭────╯   ╰──────╯                       │
+│  $176 ┤     ╭────╯                                       │
+│  $172 ┤─────╯                                            │
+│  $168 ┤                                                  │
+│       └──────────────────────────────────────────────    │
+│        Feb 1              Feb 15              Mar 1      │
+│                                                          │
+├─── WATCHLIST ────────────────────────────────────────────┤
+│                                                          │
+│  MSFT    $415.20  <span class="hl-green">+1.2%  ▲</span>  ▁▂▃▄▅▆▇█▇▆▅▆▇█        │
+│  GOOGL   $152.87  <span class="hl-green">+0.8%  ▲</span>  ▃▄▅▄▃▄▅▆▇▆▅▆▇▆        │
+│  AMZN    $178.12  <span class="hl-red">-0.3%  ▼</span>  ▆▇▆▅▄▃▂▃▄▅▄▃▂▃        │
+│  META    $501.33  <span class="hl-green">+2.1%  ▲</span>  ▂▃▄▅▆▇█▇▆▇█████        │
+│  AMD     $168.90  <span class="hl-red">-1.4%  ▼</span>  █▇▆▅▄▃▂▃▄▃▂▁▂▃        │
+│                                                          │
+├─── ALERTS ───────────────────────────────────────────────┤
+│                                                          │
+│  <span class="hl-yellow">[!]</span> NVDA above $750.00    Status: WATCHING            │
+│  <span class="hl-yellow">[!]</span> BTC-USD above $70,000 Status: WATCHING            │
+│  <span class="hl-green">[*]</span> AAPL above $185.00    Status: TRIGGERED           │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+            </pre>
+          </div>
+        </section>
+
+        <section class="content-section" id="stack">
+          <div class="section-header">
+            <span class="prompt">$</span> cat /opt/wealthwatch/STACK.md
+          </div>
+          <div class="section-body">
+            <pre class="setup-guide">
+┌─── ARCHITECTURE ─────────────────────────────────────────┐
+│                                                          │
+│    ┌──────────┐    ┌──────────┐    ┌──────────┐         │
+│    │ FRONTEND │───▶│   API    │───▶│  DATA    │         │
+│    │          │    │  SERVER  │    │  FEEDS   │         │
+│    │ Terminal │    │          │    │          │         │
+│    │ UI / TUI │◀───│ WebSocket│◀───│ Yahoo    │         │
+│    │ Web App  │    │ REST     │    │ NewsAPI  │         │
+│    └──────────┘    └──────────┘    └──────────┘         │
+│                                                          │
+├─── TECH STACK ───────────────────────────────────────────┤
+│                                                          │
+│  <span class="hl-cyan">FRONTEND</span>                                               │
+│  ├── HTML/CSS/JS         Vanilla, no framework bloat     │
+│  ├── Terminal UI          CRT aesthetic + ASCII art       │
+│  ├── Responsive           Works on mobile + desktop       │
+│  └── Vercel               Zero-config static hosting      │
+│                                                          │
+│  <span class="hl-cyan">BACKEND</span>                                                │
+│  ├── Python 3.11+         Core runtime                    │
+│  ├── yfinance             Market data feeds               │
+│  ├── APScheduler          Background alert polling        │
+│  └── JSON storage         Lightweight persistence         │
+│                                                          │
+│  <span class="hl-cyan">DATA SOURCES</span>                                           │
+│  ├── Yahoo Finance        Stocks, ETFs, crypto, indices   │
+│  ├── NewsAPI              Financial headlines             │
+│  └── Alpha Vantage        Extended market data            │
+│                                                          │
+├─── DESIGN PHILOSOPHY ────────────────────────────────────┤
+│                                                          │
+│  &gt; "Information density over eye candy"                  │
+│  &gt; "Bloomberg terminal meets hacker aesthetic"           │
+│  &gt; "Every pixel earns its place"                         │
+│                                                          │
+│  Inspired by:                                            │
+│  ├── Bloomberg Terminal                                  │
+│  ├── htop / btop                                         │
+│  ├── Retro CRT monitors                                  │
+│  └── TUI applications (lazygit, k9s)                     │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+            </pre>
+          </div>
+        </section>
+
+        <section class="content-section" id="demo">
+          <div class="section-header">
+            <span class="prompt">$</span> wealthwatch --interactive
+          </div>
+          <div class="section-body">
+            <div class="demo-terminal">
+              <div class="demo-prompt">
+                <span class="prompt-user">you@wealthwatch:</span><span class="prompt-path">~</span><span class="prompt-dollar">$</span>
+                <input type="text" id="demo-input" placeholder="Try: quote AAPL, market, portfolio, news, help" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="demo-output" id="demo-output"></div>
+            </div>
+          </div>
+        </section>
+
+        <div class="divider">════════════════════════════════════════════════════════════════</div>
+
+        <!-- Footer -->
+        <div class="footer">
+          <pre class="footer-art">
+        ╔═══════════════════════════════════════════╗
+        ║                                           ║
+        ║   $  W E A L T H W A T C H  $             ║
+        ║                                           ║
+        ║   Track  ·  Analyze  ·  Profit            ║
+        ║                                           ║
+        ╚═══════════════════════════════════════════╝
+          </pre>
+          <div class="footer-links">
+            <a href="https://github.com/Scolliq/wealthwatch" class="footer-link">[GitHub]</a>
+            <span class="footer-sep">|</span>
+            <span class="footer-text">MIT License</span>
+            <span class="footer-sep">|</span>
+            <span class="footer-text">Made with raw HTML &amp; obsession</span>
+          </div>
+          <div class="footer-status">
+            <span class="status-dot"></span> System operational | <span id="visitor-count"></span> visitors
+          </div>
+        </div>
+
+        <!-- Blinking cursor -->
+        <div class="cursor-line">
+          <span class="prompt">$</span> <span class="cursor">_</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar ticker -->
+    <div class="ticker-bar" id="ticker-bar"></div>
+
+  </div>
+
+  <script src="terminal.js"></script>
+</body>
+</html>
