@@ -238,16 +238,23 @@
 
   // ─── Boot ─────────────────────────────────────────────
 
+  const isMobile = window.innerWidth <= 480;
+
   function boot() {
     print('');
-    print(`<span class="c-blue c-bold">  ██╗    ██╗ ███████╗  █████╗  ██╗  ████████╗██╗  ██╗</span>`);
-    print(`<span class="c-blue c-bold">  ██║    ██║ ██╔════╝ ██╔══██╗ ██║  ╚══██╔══╝██║  ██║</span>`);
-    print(`<span class="c-blue c-bold">  ██║ █╗ ██║ █████╗   ███████║ ██║     ██║   ███████║</span>`);
-    print(`<span class="c-blue c-bold">  ██║███╗██║ ██╔══╝   ██╔══██║ ██║     ██║   ██╔══██║</span>`);
-    print(`<span class="c-blue c-bold">  ╚███╔███╔╝ ███████╗ ██║  ██║ ███████╗██║   ██║  ██║</span>`);
-    print(`<span class="c-blue c-bold">   ╚══╝╚══╝  ╚══════╝ ╚═╝  ╚═╝ ╚══════╝╚═╝   ╚═╝  ╚═╝</span>`);
-    print(`<span class="c-dim">  ──────────────────────────────────────────────────────</span>`);
-    print(`<span class="c-dim">  Terminal Finance Dashboard · v1.0 · Live data via Yahoo Finance</span>`);
+    if (isMobile) {
+      print(`<span class="c-blue c-bold">  [$] WealthWatch</span>`);
+      print(`<span class="c-dim">  ─────────────────────</span>`);
+    } else {
+      print(`<span class="c-blue c-bold">  ██╗    ██╗ ███████╗  █████╗  ██╗  ████████╗██╗  ██╗</span>`);
+      print(`<span class="c-blue c-bold">  ██║    ██║ ██╔════╝ ██╔══██╗ ██║  ╚══██╔══╝██║  ██║</span>`);
+      print(`<span class="c-blue c-bold">  ██║ █╗ ██║ █████╗   ███████║ ██║     ██║   ███████║</span>`);
+      print(`<span class="c-blue c-bold">  ██║███╗██║ ██╔══╝   ██╔══██║ ██║     ██║   ██╔══██║</span>`);
+      print(`<span class="c-blue c-bold">  ╚███╔███╔╝ ███████╗ ██║  ██║ ███████╗██║   ██║  ██║</span>`);
+      print(`<span class="c-blue c-bold">   ╚══╝╚══╝  ╚══════╝ ╚═╝  ╚═╝ ╚══════╝╚═╝   ╚═╝  ╚═╝</span>`);
+      print(`<span class="c-dim">  ──────────────────────────────────────────────────────</span>`);
+    }
+    print(`<span class="c-dim">  Terminal Finance Dashboard · v1.0</span>`);
     printBlank();
     print(`<span class="c-bright">  Commands:</span>`);
     printBlank();
@@ -502,14 +509,20 @@
     },
 
     '/stack': function() {
+      const arch = isMobile ? [
+        `  <span class="c-cyan">BROWSER</span> <span class="c-dim">→</span> <span class="c-cyan">VERCEL API</span> <span class="c-dim">→</span> <span class="c-cyan">YAHOO</span>`,
+        `  <span class="c-dim">(Terminal)  (/api/quote)  (Finance)</span>`,
+      ] : [
+        `  <span class="c-dim">┌──────────┐    ┌──────────┐    ┌──────────┐</span>`,
+        `  <span class="c-dim">│</span> <span class="c-cyan">BROWSER</span>  <span class="c-dim">│───▶│</span> <span class="c-cyan">VERCEL</span>   <span class="c-dim">│───▶│</span> <span class="c-cyan">YAHOO</span>    <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> Terminal  <span class="c-dim">│    │</span> API      <span class="c-dim">│    │</span> Finance  <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> UI / JS   <span class="c-dim">│◀───│</span> /api/    <span class="c-dim">│◀───│</span> API v7/8 <span class="c-dim">│</span>`,
+        `  <span class="c-dim">└──────────┘    └──────────┘    └──────────┘</span>`,
+      ];
       printLines([
         bright('Architecture'),
         '',
-        `  <span class="c-dim">┌──────────┐    ┌──────────┐    ┌──────────┐</span>`,
-        `  <span class="c-dim">│</span> <span class="c-cyan">BROWSER</span>  <span class="c-dim">│───▶│</span> <span class="c-cyan">CORS</span>     <span class="c-dim">│───▶│</span> <span class="c-cyan">YAHOO</span>    <span class="c-dim">│</span>`,
-        `  <span class="c-dim">│</span> Terminal  <span class="c-dim">│    │</span> Proxy    <span class="c-dim">│    │</span> Finance  <span class="c-dim">│</span>`,
-        `  <span class="c-dim">│</span> UI / JS   <span class="c-dim">│◀───│</span>          <span class="c-dim">│◀───│</span> API v7/8 <span class="c-dim">│</span>`,
-        `  <span class="c-dim">└──────────┘    └──────────┘    └──────────┘</span>`,
+        ...arch,
         '',
         bright('Tech Stack'),
         '',
@@ -633,8 +646,8 @@
       }
 
       // Build ASCII chart from real data
-      const chartHeight = 8;
-      const chartWidth = 50;
+      const chartHeight = isMobile ? 6 : 8;
+      const chartWidth = isMobile ? 28 : 50;
       const min = Math.min(...closes);
       const max = Math.max(...closes);
       const range = max - min || 1;
@@ -650,7 +663,8 @@
       const lines = [];
       for (let row = chartHeight - 1; row >= 0; row--) {
         const threshold = min + (row / (chartHeight - 1)) * range;
-        const priceLabel = fmtPrice(threshold).padStart(12);
+        const padLen = isMobile ? 8 : 12;
+        const priceLabel = fmtPrice(threshold).padStart(padLen);
         let line = priceLabel + ' ┤';
 
         for (let col = 0; col < chartWidth; col++) {
@@ -674,9 +688,11 @@
       }
 
       // X-axis
-      lines.push('             └' + '─'.repeat(chartWidth));
+      const axispad = ' '.repeat(padLen + 1);
+      lines.push(axispad + '└' + '─'.repeat(chartWidth));
       const daysAgo = closes.length;
-      lines.push(dim(`              -${daysAgo}d` + ' '.repeat(chartWidth - 20) + 'now'));
+      const gap = Math.max(chartWidth - 20, 2);
+      lines.push(dim(axispad + ` -${daysAgo}d` + ' '.repeat(gap) + 'now'));
 
       const trend = closes[closes.length - 1] >= closes[0] ? 'positive' : 'negative';
       const changeVal = ((closes[closes.length - 1] / closes[0]) - 1) * 100;
@@ -684,11 +700,16 @@
 
       printRaw(panel(
         `${sym} · 30D CHART`,
-        `<div style="padding:4px 0"><span class="${trend}">${lines.join('\n')}</span></div>`,
+        `<div class="ascii-art"><span class="${trend}">${lines.join('\n')}</span></div>`,
         'LIVE'
       ));
       printBlank();
-      print(`  ${fmtPrice(closes[closes.length - 1])} ${dim('last')}  ·  <span class="${trend}">${changeStr}</span> ${dim('30d')}  ·  ${fmtPrice(max)} ${dim('high')}  ·  ${fmtPrice(min)} ${dim('low')}`);
+      if (isMobile) {
+        print(`  ${fmtPrice(closes[closes.length - 1])} ${dim('last')} · <span class="${trend}">${changeStr}</span> ${dim('30d')}`);
+        print(`  ${fmtPrice(max)} ${dim('high')} · ${fmtPrice(min)} ${dim('low')}`);
+      } else {
+        print(`  ${fmtPrice(closes[closes.length - 1])} ${dim('last')}  ·  <span class="${trend}">${changeStr}</span> ${dim('30d')}  ·  ${fmtPrice(max)} ${dim('high')}  ·  ${fmtPrice(min)} ${dim('low')}`);
+      }
 
     } catch (e) {
       hideLoading();
@@ -706,7 +727,7 @@
           `             └──────────────────────────────────────`,
           `  ${dim('           -30d              -15d              now')}`,
         ];
-        printRaw(panel(`${sym} · 30D CHART`, `<div style="padding:4px 0">${chartLines.join('\n')}</div>`, 'DEMO'));
+        printRaw(panel(`${sym} · 30D CHART`, `<div class="ascii-art">${chartLines.join('\n')}</div>`, 'DEMO'));
       } else {
         printLines([
           `<span class="c-red">Failed to fetch chart for:</span> ${sym}`,
