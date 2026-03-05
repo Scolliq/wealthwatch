@@ -868,6 +868,18 @@
       printBlank();
       print(`  ${dim('Supabase not configured — using demo portfolio.')}`);
       print(`  ${dim('Set SUPABASE_URL & ANON_KEY in terminal.js to enable accounts.')}`);
+    } else if (sb) {
+      // Check if holdings table exists
+      sb.from('holdings').select('id', { count: 'exact', head: true }).then(({ error }) => {
+        if (error && isSchemaError(error)) {
+          printBlank();
+          print(`  <span class="c-yellow">⚠ Holdings table not found in database.</span>`);
+          print(`  ${dim('Run')} ${sc('/setup')} ${dim('for instructions to create it.')}`);
+          printBlank();
+          bindSlashCommands();
+          scrollToBottom();
+        }
+      });
     }
     printBlank();
     bindSlashCommands();
@@ -905,6 +917,7 @@
         '',
         `  ${sc('/about')}                   ${dim('About WealthWatch')}`,
         `  ${sc('/stack')}                   ${dim('Tech stack & architecture')}`,
+        `  ${sc('/setup')}                   ${dim('Database setup instructions')}`,
         `  ${sc('/help')}                    ${dim('This help menu')}`,
         `  ${sc('/clear')}                   ${dim('Clear terminal')}`,
         '',
@@ -1048,8 +1061,8 @@
 
       if (!isUserPortfolio && supabaseEnabled()) {
         if (schemaIssue) {
-          print(`<span class="c-yellow">⚠ Database table not found.</span> ${dim('Run supabase-schema.sql in your Supabase SQL Editor.')}`);
-          print(dim('Showing demo portfolio below.'));
+          print(`<span class="c-yellow">⚠ Holdings table not found.</span> Run ${sc('/setup')} for instructions.`);
+          print(dim('Showing demo portfolio.'));
         } else if (!currentUser) {
           print(dim(`Demo portfolio shown. ${sc('/login')} or ${sc('/signup')} to track your own.`));
         } else {
@@ -1448,6 +1461,42 @@
     '/clear': function() {
       output.innerHTML = '';
     },
+
+    '/setup': function() {
+      printLines([
+        bright('Database Setup'),
+        '',
+        `To use portfolio features (${sc('/add')}, ${sc('/remove')}, ${sc('/portfolio')}),`,
+        'create the holdings table in your Supabase project:',
+        '',
+        '  1. Go to <a href="https://supabase.com" target="_blank">supabase.com</a> and open your project',
+        '  2. Navigate to <strong>SQL Editor</strong>',
+        '  3. Paste and run the SQL below:',
+        '',
+        '<pre class="c-cyan" style="padding-left:2ch">' +
+        'create table if not exists holdings (\n' +
+        '  id uuid default gen_random_uuid() primary key,\n' +
+        '  user_id uuid references auth.users(id) on delete cascade not null,\n' +
+        '  symbol text not null,\n' +
+        '  qty numeric not null check (qty > 0),\n' +
+        '  avg_cost numeric not null check (avg_cost > 0),\n' +
+        '  added_at timestamptz default now(),\n' +
+        '  unique(user_id, symbol)\n' +
+        ');\n\n' +
+        'alter table holdings enable row level security;\n\n' +
+        'create policy "Users can view own holdings"\n' +
+        '  on holdings for select using (auth.uid() = user_id);\n' +
+        'create policy "Users can insert own holdings"\n' +
+        '  on holdings for insert with check (auth.uid() = user_id);\n' +
+        'create policy "Users can update own holdings"\n' +
+        '  on holdings for update using (auth.uid() = user_id);\n' +
+        'create policy "Users can delete own holdings"\n' +
+        '  on holdings for delete using (auth.uid() = user_id);\n\n' +
+        'create index if not exists holdings_user_id_idx on holdings(user_id);</pre>',
+        '',
+        dim('After running the SQL, reload this page and your portfolio will work.'),
+      ]);
+    },
   };
 
   // ─── Dynamic commands ─────────────────────────────────
@@ -1647,9 +1696,8 @@
       hideLoading();
       if (isSchemaError(e) || e.message.includes('schema')) {
         printLines([
-          `<span class="c-yellow">⚠ Database table not found.</span>`,
-          dim('The holdings table has not been created yet.'),
-          dim('Run the SQL from supabase-schema.sql in your Supabase SQL Editor.'),
+          `<span class="c-yellow">⚠ Holdings table not found.</span>`,
+          `Run ${sc('/setup')} for instructions to create it.`,
         ]);
       } else {
         printLines([`<span class="c-red">Error:</span> ${e.message}`]);
@@ -1691,7 +1739,14 @@
       refreshInsights();
     } catch (e) {
       hideLoading();
-      printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+      if (isSchemaError(e) || e.message.includes('schema')) {
+        printLines([
+          `<span class="c-yellow">⚠ Holdings table not found.</span>`,
+          `Run ${sc('/setup')} for instructions to create it.`,
+        ]);
+      } else {
+        printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+      }
     }
   }
 
