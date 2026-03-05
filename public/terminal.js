@@ -12,11 +12,6 @@
   let historyIndex = -1;
 
   // ─── Supabase Config ──────────────────────────────────
-  // 1. Go to supabase.com → create a free project
-  // 2. Go to Settings → API → copy URL and anon key
-  // 3. Paste them below
-  // 4. Run the SQL migration from supabase-schema.sql in the SQL editor
-
   const SUPABASE_URL  = 'https://nrrmrbymsxcsvuofsonx.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ycm1yYnltc3hjc3Z1b2Zzb254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MzYxNDAsImV4cCI6MjA4ODMxMjE0MH0.55BiZOo98GqW0JZU-fM-EgBITCQJRpgb4-LML6zkWkI';
 
@@ -60,9 +55,8 @@
   // ─── Data fetching ──────────────────────────────────────
 
   const API_BASE = '/api/quote';
-
   const cache = {};
-  const CACHE_TTL = 30000;
+  const CACHE_TTL = 5000; // 5 seconds for live feel
 
   function getCached(key) {
     const entry = cache[key];
@@ -120,32 +114,18 @@
     const opens = quote.open || [];
     const highs = quote.high || [];
     const lows = quote.low || [];
-    const volumes = quote.volume || [];
     const meta = result.meta;
 
-    // Build OHLC data for lightweight-charts
     const candles = [];
     const lineData = [];
     for (let i = 0; i < timestamps.length; i++) {
       if (closes[i] == null) continue;
       const time = timestamps[i];
-      candles.push({
-        time,
-        open: opens[i] || closes[i],
-        high: highs[i] || closes[i],
-        low: lows[i] || closes[i],
-        close: closes[i],
-      });
+      candles.push({ time, open: opens[i] || closes[i], high: highs[i] || closes[i], low: lows[i] || closes[i], close: closes[i] });
       lineData.push({ time, value: closes[i] });
     }
 
-    const data = {
-      candles,
-      lineData,
-      closes: closes.filter(v => v != null),
-      name: meta.shortName || symbol,
-      price: meta.regularMarketPrice,
-    };
+    const data = { candles, lineData, closes: closes.filter(v => v != null), name: meta.shortName || symbol, price: meta.regularMarketPrice };
     setCache(key, data);
     return data;
   }
@@ -166,7 +146,7 @@
     return String(v);
   }
 
-  // ─── Mock data (fallback) ──────────────────────────────
+  // ─── Mock data ──────────────────────────────────────────
 
   const mockData = {
     AAPL:      { name: 'Apple Inc.',          price: 189.84, change: 1.24,  high: 191.02, low: 187.33, vol: '52.3M',  cap: '2.94T' },
@@ -182,23 +162,28 @@
     'ETH-USD': { name: 'Ethereum',            price: 3521,   change: 1.87,  high: 3580,   low: 3455,   vol: '14.1B',  cap: '423B' },
   };
 
-  const indexSymbols = {
-    '^GSPC':  'S&P 500',
-    '^DJI':   'DOW 30',
-    '^IXIC':  'NASDAQ',
-    '^RUT':   'RUSSELL 2K',
-    '^VIX':   'VIX',
+  const ASSET_TYPES = {
+    equity:    { label: 'Equities',    icon: '◆' },
+    etf:       { label: 'ETFs',        icon: '◇' },
+    bond:      { label: 'Bonds',       icon: '▬' },
+    commodity: { label: 'Commodities', icon: '●' },
+    crypto:    { label: 'Crypto',      icon: '₿' },
   };
 
+  // Auto-detect asset type from symbol
+  function detectAssetType(sym) {
+    if (sym.endsWith('-USD') || ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'DOGE', 'XRP'].some(c => sym.startsWith(c))) return 'crypto';
+    if (['GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F', 'PL=F', 'PA=F', 'GLD', 'SLV', 'USO'].includes(sym)) return 'commodity';
+    if (['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'VEA', 'VWO', 'BND', 'AGG', 'TLT', 'IEF', 'LQD', 'HYG', 'ARKK', 'XLF', 'XLE', 'XLK'].includes(sym)) return 'etf';
+    if (['TLT', 'IEF', 'SHY', 'BND', 'AGG', 'LQD', 'HYG', 'VCSH', 'VCIT', 'VCLT'].includes(sym)) return 'bond';
+    return 'equity';
+  }
+
+  const indexSymbols = { '^GSPC': 'S&P 500', '^DJI': 'DOW 30', '^IXIC': 'NASDAQ', '^RUT': 'RUSSELL 2K', '^VIX': 'VIX' };
   const cryptoSymbols = ['BTC-USD', 'ETH-USD', 'SOL-USD'];
-  const stockSymbols  = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'META', 'AMD'];
   const watchlistSymbols = ['MSFT', 'GOOGL', 'AMZN', 'META', 'AMD'];
 
-  // Allocation colors
-  const ALLOC_COLORS = [
-    '#5f87ff', '#5faf5f', '#d7af5f', '#d75f5f', '#af5faf',
-    '#5fafaf', '#ff875f', '#87afd7', '#d787af', '#afd75f',
-  ];
+  const ALLOC_COLORS = ['#5f87ff', '#5faf5f', '#d7af5f', '#d75f5f', '#af5faf', '#5fafaf', '#ff875f', '#87afd7', '#d787af', '#afd75f'];
 
   // ─── Rendering ────────────────────────────────────────
 
@@ -262,8 +247,6 @@
   function dim(t)  { return `<span class="c-dim">${t}</span>`; }
   function bright(t) { return `<span class="c-bright c-bold">${t}</span>`; }
 
-  // ─── TUI Panel builder ──────────────────────────────────
-
   function panel(title, content, badge) {
     const b = badge ? `<span class="tui-badge">${badge}</span>` : '';
     return `<div class="tui-panel"><div class="tui-panel-title">${title}${b}</div><div class="tui-panel-body">${content}</div></div>`;
@@ -271,9 +254,7 @@
 
   function table(headers, rows, footerRow) {
     let h = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
-    let r = rows.map(row =>
-      '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
-    ).join('');
+    let r = rows.map(row => '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>').join('');
     let f = '';
     if (footerRow) {
       f = '<tr class="tui-row-total">' + footerRow.map(cell => `<td>${cell}</td>`).join('') + '</tr>';
@@ -315,109 +296,143 @@
     return `<span class="${trend}">${spark}</span>`;
   }
 
-  // ─── TradingView Chart Renderer ──────────────────────
+  function fmtPL(val) {
+    const abs = Math.abs(val).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    return val >= 0 ? pos(`+$${abs}`) : neg(`-$${abs}`);
+  }
 
-  function renderChart(containerId, chartData, symbol) {
+  function fmtPLPct(pct) {
+    return pct >= 0 ? pos(`+${pct.toFixed(1)}%`) : neg(`${pct.toFixed(1)}%`);
+  }
+
+  // ─── TradingView Chart ──────────────────────────────────
+
+  function renderChart(containerId, chartData) {
     const container = document.getElementById(containerId);
     if (!container || typeof LightweightCharts === 'undefined') return;
 
     const chart = LightweightCharts.createChart(container, {
-      layout: {
-        background: { color: '#111111' },
-        textColor: '#555',
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: '#1a1a1a' },
-        horzLines: { color: '#1a1a1a' },
-      },
-      crosshair: {
-        mode: LightweightCharts.CrosshairMode.Normal,
-        vertLine: { color: '#5f87ff44', width: 1, style: 2 },
-        horzLine: { color: '#5f87ff44', width: 1, style: 2 },
-      },
-      rightPriceScale: {
-        borderColor: '#2a2a2a',
-      },
-      timeScale: {
-        borderColor: '#2a2a2a',
-        timeVisible: false,
-      },
+      layout: { background: { color: '#111111' }, textColor: '#555', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
+      grid: { vertLines: { color: '#1a1a1a' }, horzLines: { color: '#1a1a1a' } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#5f87ff44', width: 1, style: 2 }, horzLine: { color: '#5f87ff44', width: 1, style: 2 } },
+      rightPriceScale: { borderColor: '#2a2a2a' },
+      timeScale: { borderColor: '#2a2a2a', timeVisible: false },
       handleScroll: { vertTouchDrag: false },
     });
 
     const trend = chartData.closes[chartData.closes.length - 1] >= chartData.closes[0];
-    const upColor = '#5faf5f';
-    const downColor = '#d75f5f';
+    const color = trend ? '#5faf5f' : '#d75f5f';
 
-    // Area chart with gradient
     const areaSeries = chart.addAreaSeries({
-      topColor: trend ? 'rgba(95, 175, 95, 0.3)' : 'rgba(215, 95, 95, 0.3)',
-      bottomColor: trend ? 'rgba(95, 175, 95, 0.02)' : 'rgba(215, 95, 95, 0.02)',
-      lineColor: trend ? upColor : downColor,
-      lineWidth: 2,
-      crosshairMarkerBackgroundColor: trend ? upColor : downColor,
-      crosshairMarkerBorderColor: '#fff',
+      topColor: trend ? 'rgba(95,175,95,0.3)' : 'rgba(215,95,95,0.3)',
+      bottomColor: trend ? 'rgba(95,175,95,0.02)' : 'rgba(215,95,95,0.02)',
+      lineColor: color, lineWidth: 2,
+      crosshairMarkerBackgroundColor: color, crosshairMarkerBorderColor: '#fff',
     });
 
     areaSeries.setData(chartData.lineData);
     chart.timeScale().fitContent();
 
-    // Resize handler
-    const ro = new ResizeObserver(() => {
-      chart.applyOptions({ width: container.clientWidth });
-    });
+    const ro = new ResizeObserver(() => { chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
   }
 
-  // ─── Supabase helpers ──────────────────────────────────
+  // ─── Supabase DB helpers ──────────────────────────────
 
   async function getHoldings() {
     if (!sb || !currentUser) return null;
-    const { data, error } = await sb
-      .from('holdings')
-      .select('*')
-      .order('added_at', { ascending: true });
+    const { data, error } = await sb.from('holdings').select('*').order('asset_type').order('added_at');
     if (error) throw error;
     return data;
   }
 
-  async function addHolding(symbol, qty, avgCost) {
+  async function addHolding(symbol, qty, avgCost, assetType, purchaseDate, notes) {
     if (!sb || !currentUser) throw new Error('Not logged in');
-    // Upsert — if symbol exists, update qty and avg cost
-    const { data: existing } = await sb
-      .from('holdings')
-      .select('*')
-      .eq('user_id', currentUser.id)
-      .eq('symbol', symbol)
-      .single();
+
+    // Check if holding exists — if so, weighted average
+    const { data: existing } = await sb.from('holdings').select('*').eq('user_id', currentUser.id).eq('symbol', symbol).single();
 
     if (existing) {
-      // Weighted average
       const totalQty = existing.qty + qty;
       const newAvg = ((existing.avg_cost * existing.qty) + (avgCost * qty)) / totalQty;
-      const { error } = await sb
-        .from('holdings')
-        .update({ qty: totalQty, avg_cost: newAvg })
-        .eq('id', existing.id);
+      const { error } = await sb.from('holdings').update({ qty: totalQty, avg_cost: newAvg, updated_at: new Date().toISOString() }).eq('id', existing.id);
       if (error) throw error;
     } else {
-      const { error } = await sb
-        .from('holdings')
-        .insert({ user_id: currentUser.id, symbol, qty, avg_cost: avgCost });
+      const { error } = await sb.from('holdings').insert({
+        user_id: currentUser.id, symbol, qty, avg_cost: avgCost,
+        asset_type: assetType, purchase_date: purchaseDate || null, notes: notes || null,
+      });
       if (error) throw error;
     }
+
+    // Log transaction
+    await sb.from('transactions').insert({
+      user_id: currentUser.id, symbol, asset_type: assetType,
+      action: 'buy', qty, price: avgCost, notes: notes || null,
+    });
+  }
+
+  async function sellHolding(symbol, qty, price) {
+    if (!sb || !currentUser) throw new Error('Not logged in');
+
+    const { data: existing } = await sb.from('holdings').select('*').eq('user_id', currentUser.id).eq('symbol', symbol).single();
+    if (!existing) throw new Error(`You don't hold ${symbol}`);
+    if (qty > existing.qty) throw new Error(`You only hold ${existing.qty} shares of ${symbol}`);
+
+    if (qty === existing.qty) {
+      // Sell all — remove holding
+      const { error } = await sb.from('holdings').delete().eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      // Partial sell — reduce qty, keep avg cost
+      const { error } = await sb.from('holdings').update({ qty: existing.qty - qty, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      if (error) throw error;
+    }
+
+    // Log transaction
+    await sb.from('transactions').insert({
+      user_id: currentUser.id, symbol, asset_type: existing.asset_type,
+      action: 'sell', qty, price,
+    });
   }
 
   async function removeHolding(symbol) {
     if (!sb || !currentUser) throw new Error('Not logged in');
-    const { error } = await sb
-      .from('holdings')
-      .delete()
-      .eq('user_id', currentUser.id)
-      .eq('symbol', symbol);
+    const { error } = await sb.from('holdings').delete().eq('user_id', currentUser.id).eq('symbol', symbol);
     if (error) throw error;
+  }
+
+  async function getTransactions(limit) {
+    if (!sb || !currentUser) return [];
+    const { data, error } = await sb.from('transactions').select('*').order('executed_at', { ascending: false }).limit(limit || 20);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ─── Live Price Poller (5s) ──────────────────────────
+
+  let livePortfolioSymbols = [];
+  let livePriceData = {};
+  let livePriceEl = null;
+  let livePriceInterval = null;
+
+  function startLivePrices(symbols, renderFn) {
+    stopLivePrices();
+    livePortfolioSymbols = symbols;
+    livePriceInterval = setInterval(async () => {
+      try {
+        // Force bypass cache for live updates
+        const key = 'quotes:' + symbols.join(',');
+        delete cache[key];
+        const data = await fetchQuotes(symbols);
+        livePriceData = data;
+        if (renderFn) renderFn(data);
+      } catch (e) { /* silent */ }
+    }, 5000);
+  }
+
+  function stopLivePrices() {
+    if (livePriceInterval) { clearInterval(livePriceInterval); livePriceInterval = null; }
   }
 
   // ─── Boot ─────────────────────────────────────────────
@@ -440,36 +455,33 @@
     }
     print(`<span class="c-dim">  Terminal Finance Dashboard · v2.0</span>`);
     printBlank();
-    print(`<span class="c-bright">  Commands:</span>`);
-    printBlank();
+
+    print(`<span class="c-bright">  Market:</span>`);
     print(`    ${sc('/market')}        ${dim('Market overview & indices')}`);
-    print(`    ${sc('/portfolio')}     ${dim('Portfolio positions & P/L')}`);
-    print(`    ${sc('/analytics')}     ${dim('Portfolio analytics & allocation')}`);
     print(`    ${sc('/quote')} ${dim('<SYM>')}   ${dim('Real-time stock quote')}`);
     print(`    ${sc('/chart')} ${dim('<SYM>')}   ${dim('Interactive price chart (30d)')}`);
     print(`    ${sc('/watchlist')}     ${dim('Tracked tickers')}`);
-    print(`    ${sc('/alerts')}        ${dim('Price alert status')}`);
     print(`    ${sc('/news')}          ${dim('Financial headlines')}`);
     printBlank();
-    if (supabaseEnabled()) {
-      print(`  <span class="c-cyan">Account:</span>`);
-      print(`    ${sc('/signup')}        ${dim('Create account')}`);
-      print(`    ${sc('/login')}         ${dim('Sign in')}`);
-      print(`    ${sc('/logout')}        ${dim('Sign out')}`);
-      print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Add holding')}`);
-      print(`    ${sc('/remove')} ${dim('<SYM>')}             ${dim('Remove holding')}`);
-      printBlank();
-    }
-    print(`    ${sc('/about')}         ${dim('About WealthWatch')}`);
-    print(`    ${sc('/help')}          ${dim('All commands')}`);
-    print(`    ${sc('/clear')}         ${dim('Clear terminal')}`);
+
+    print(`<span class="c-bright">  Portfolio:</span>`);
+    print(`    ${sc('/portfolio')}     ${dim('Holdings with live prices (5s refresh)')}`);
+    print(`    ${sc('/analytics')}     ${dim('Allocation, performance & stats')}`);
+    print(`    ${sc('/history')}       ${dim('Transaction history')}`);
+    print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Buy / add holding')}`);
+    print(`    ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')} ${dim('Sell holding')}`);
+    print(`    ${sc('/remove')} ${dim('<SYM>')}             ${dim('Remove holding entirely')}`);
     printBlank();
-    print(`  ${dim('Click any command or type below. ↑↓ for history.')}`);
-    if (!supabaseEnabled()) {
-      printBlank();
-      print(`  ${dim('Supabase not configured — using demo portfolio.')}`);
-      print(`  ${dim('Set SUPABASE_URL & ANON_KEY in terminal.js to enable accounts.')}`);
-    }
+
+    print(`<span class="c-bright">  Account:</span>`);
+    print(`    ${sc('/signup')}        ${dim('Create account')}`);
+    print(`    ${sc('/login')}         ${dim('Sign in')}`);
+    print(`    ${sc('/logout')}        ${dim('Sign out')}`);
+    printBlank();
+
+    print(`    ${sc('/about')}  ${sc('/stack')}  ${sc('/help')}  ${sc('/clear')}`);
+    printBlank();
+    print(`  ${dim('Click any command or type below. Prices update every 5 seconds.')}`);
     printBlank();
     bindSlashCommands();
     scrollToBottom();
@@ -480,181 +492,194 @@
   const commands = {
 
     '/help': function() {
-      const authCmds = supabaseEnabled() ? [
+      printLines([
+        bright('Market'),
+        `  ${sc('/market')}                  ${dim('Live indices & crypto')}`,
+        `  ${sc('/quote')} ${dim('<ticker>')}          ${dim('Real-time quote')}`,
+        `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('Interactive 30d chart')}`,
+        `  ${sc('/watchlist')}               ${dim('Tracked tickers')}`,
+        `  ${sc('/alerts')}                  ${dim('Price alerts')}`,
+        `  ${sc('/news')}                    ${dim('Headlines')}`,
+        '',
+        bright('Portfolio'),
+        `  ${sc('/portfolio')}               ${dim('Holdings with live 5s prices')}`,
+        `  ${sc('/analytics')}               ${dim('Allocation & performance')}`,
+        `  ${sc('/history')}                 ${dim('Transaction log')}`,
+        `  ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}   ${dim('Buy shares (auto-detects type)')}`,
+        `  ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')}  ${dim('Sell shares')}`,
+        `  ${sc('/remove')} ${dim('<SYM>')}              ${dim('Remove entire position')}`,
         '',
         bright('Account'),
-        `  ${sc('/signup')}                  ${dim('Create a new account')}`,
-        `  ${sc('/login')}                   ${dim('Sign in to your account')}`,
+        `  ${sc('/signup')}                  ${dim('Create account')}`,
+        `  ${sc('/login')}                   ${dim('Sign in')}`,
         `  ${sc('/logout')}                  ${dim('Sign out')}`,
-        `  ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}   ${dim('Add a holding to portfolio')}`,
-        `  ${sc('/remove')} ${dim('<SYM>')}              ${dim('Remove a holding')}`,
-      ] : [];
-
-      printLines([
-        bright('Commands'),
         '',
-        `  ${sc('/market')}                  ${dim('Live market indices & crypto')}`,
-        `  ${sc('/portfolio')}               ${dim('Portfolio positions & P/L')}`,
-        `  ${sc('/analytics')}               ${dim('Portfolio analytics & charts')}`,
-        `  ${sc('/quote')} ${dim('<ticker>')}          ${dim('Real-time stock quote')}`,
-        `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('Interactive price chart (30d)')}`,
-        `  ${sc('/watchlist')}               ${dim('Tracked tickers with sparklines')}`,
-        `  ${sc('/alerts')}                  ${dim('Active price alerts')}`,
-        `  ${sc('/news')}                    ${dim('Latest financial headlines')}`,
-        ...authCmds,
+        `  ${sc('/about')}  ${sc('/stack')}  ${sc('/clear')}`,
         '',
-        `  ${sc('/about')}                   ${dim('About WealthWatch')}`,
-        `  ${sc('/stack')}                   ${dim('Tech stack & architecture')}`,
-        `  ${sc('/help')}                    ${dim('This help menu')}`,
-        `  ${sc('/clear')}                   ${dim('Clear terminal')}`,
-        '',
-        dim('Tip: Click any command or type it. Arrow ↑↓ for history.'),
+        dim('Asset types: equity, etf, bond, commodity, crypto (auto-detected)'),
       ]);
     },
 
     '/market': async function() {
       showLoading('Fetching market data...');
       let usedLive = false;
-
       try {
         const allSymbols = [...Object.keys(indexSymbols), ...cryptoSymbols];
         const data = await fetchQuotes(allSymbols);
         hideLoading();
         usedLive = true;
-
         const idxRows = Object.entries(indexSymbols).map(([sym, label]) => {
           const q = data[sym];
           if (!q) return [tn(label), dim('—'), dim('—')];
           return [tn(label), `<span class="price">${fmtPrice(q.price)}</span>`, fmtChange(q.change)];
         });
-
         const cryptoRows = cryptoSymbols.map(sym => {
           const q = data[sym];
           const label = sym.replace('-USD', '/USD');
           if (!q) return [tn(label), dim('—'), dim('—')];
           return [tn(label), `<span class="price">${fmtPrice(q.price)}</span>`, fmtChange(q.change)];
         });
-
         printRaw(panel('Indices', table(['Index', 'Price', 'Change'], idxRows), 'LIVE'));
         printRaw(panel('Crypto', table(['Asset', 'Price', 'Change'], cryptoRows), 'LIVE'));
-
       } catch (e) {
         hideLoading();
-        const indices = [
-          ['S&P 500',    '$5,842.31',  1.24],
-          ['DOW 30',     '$43,890.12', 0.87],
-          ['NASDAQ',     '$18,563.77', 1.67],
-          ['RUSSELL 2K', '$2,198.45',  -0.32],
-          ['VIX',        '$14.82',     -2.10],
-        ];
-        const crypto = [
-          ['BTC/USD',  '$67,843', 2.31],
-          ['ETH/USD',  '$3,521',  1.87],
-          ['SOL/USD',  '$142.55', 4.12],
-        ];
-        const mkRows = (data) => data.map(([name, price, chg]) => [
-          tn(name), `<span class="price">${price}</span>`, fmtChange(chg)
-        ]);
+        const indices = [['S&P 500','$5,842.31',1.24],['DOW 30','$43,890.12',0.87],['NASDAQ','$18,563.77',1.67],['RUSSELL 2K','$2,198.45',-0.32],['VIX','$14.82',-2.10]];
+        const crypto = [['BTC/USD','$67,843',2.31],['ETH/USD','$3,521',1.87],['SOL/USD','$142.55',4.12]];
+        const mkRows = (d) => d.map(([n, p, c]) => [tn(n), `<span class="price">${p}</span>`, fmtChange(c)]);
         printRaw(panel('Indices', table(['Index', 'Price', 'Change'], mkRows(indices)), 'DEMO'));
         printRaw(panel('Crypto', table(['Asset', 'Price', 'Change'], mkRows(crypto)), 'DEMO'));
       }
-
       printBlank();
-      const src = usedLive ? 'Yahoo Finance' : 'demo data (API unavailable)';
-      print(dim(`Source: ${src}  ·  ${sc('/quote')} <ticker> for details`));
+      print(dim(`Source: ${usedLive ? 'Yahoo Finance' : 'demo data'}  ·  ${sc('/quote')} <ticker> for details`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
     },
 
     '/portfolio': async function() {
+      stopLivePrices(); // Stop any previous poller
       showLoading('Fetching portfolio...');
 
       let holdings;
       let isUserPortfolio = false;
 
-      // Try Supabase first
       if (sb && currentUser) {
         try {
           const dbHoldings = await getHoldings();
           if (dbHoldings && dbHoldings.length > 0) {
-            holdings = dbHoldings.map(h => ({ sym: h.symbol, qty: h.qty, avgCost: h.avg_cost }));
+            holdings = dbHoldings.map(h => ({
+              sym: h.symbol, qty: Number(h.qty), avgCost: Number(h.avg_cost),
+              type: h.asset_type, date: h.purchase_date, notes: h.notes,
+            }));
             isUserPortfolio = true;
           }
-        } catch (e) {
-          // Fall through to demo
-        }
+        } catch (e) { /* fall through */ }
       }
 
-      // Demo portfolio fallback
       if (!holdings) {
         holdings = [
-          { sym: 'AAPL',    qty: 50,  avgCost: 171.20 },
-          { sym: 'NVDA',    qty: 25,  avgCost: 480.50 },
-          { sym: 'TSLA',    qty: 10,  avgCost: 248.90 },
-          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100  },
+          { sym: 'AAPL', qty: 50, avgCost: 171.20, type: 'equity' },
+          { sym: 'NVDA', qty: 25, avgCost: 480.50, type: 'equity' },
+          { sym: 'TSLA', qty: 10, avgCost: 248.90, type: 'equity' },
+          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100, type: 'crypto' },
+          { sym: 'GLD', qty: 20, avgCost: 185.00, type: 'commodity' },
+          { sym: 'SPY', qty: 30, avgCost: 440.00, type: 'etf' },
         ];
       }
 
-      let rows, totalValue = 0, totalPL = 0, totalCost = 0;
-      let usedLive = false;
+      const allSyms = holdings.map(h => h.sym);
+      const liveContainerId = 'live-portfolio-' + Date.now();
+
+      function renderPortfolioTable(data) {
+        const el = document.getElementById(liveContainerId);
+        if (!el) { stopLivePrices(); return; }
+
+        // Group by asset type
+        const groups = {};
+        let totalValue = 0, totalPL = 0, totalCost = 0;
+
+        holdings.forEach(h => {
+          const q = data[h.sym];
+          const price = q ? q.price : mockData[h.sym]?.price || 0;
+          const change = q ? q.change : mockData[h.sym]?.change || 0;
+          const value = price * h.qty;
+          const pl = (price - h.avgCost) * h.qty;
+          const plPct = ((price / h.avgCost) - 1) * 100;
+          totalValue += value;
+          totalPL += pl;
+          totalCost += h.avgCost * h.qty;
+
+          if (!groups[h.type]) groups[h.type] = [];
+          groups[h.type].push({
+            sym: h.sym, qty: h.qty, avgCost: h.avgCost,
+            price, change, value, pl, plPct,
+          });
+        });
+
+        let html = '';
+
+        // Render each asset type group
+        Object.entries(ASSET_TYPES).forEach(([type, meta]) => {
+          const items = groups[type];
+          if (!items || items.length === 0) return;
+
+          const groupValue = items.reduce((s, i) => s + i.value, 0);
+          const groupPL = items.reduce((s, i) => s + i.pl, 0);
+
+          const rows = items.map(i => [
+            tn(i.sym),
+            String(i.qty),
+            fmtPrice(i.avgCost),
+            `<span class="price">${fmtPrice(i.price)}</span>`,
+            fmtChange(i.change),
+            fmtPL(i.pl),
+            fmtPLPct(i.plPct),
+          ]);
+
+          const footer = ['', '', '', `<strong>${fmtPrice(groupValue)}</strong>`, '', `<strong>${fmtPL(groupPL)}</strong>`, ''];
+          html += panel(`${meta.icon} ${meta.label}`, table(['Ticker', 'Qty', 'Cost', 'Price', 'Day', 'P/L', '%'], rows, footer));
+        });
+
+        // Total summary bar
+        const totalPLPct = totalCost > 0 ? ((totalPL / totalCost) * 100) : 0;
+        html += `<div class="tui-panel" style="border-color:var(--accent)"><div class="tui-panel-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px">`;
+        html += `<span>${dim('Total Value')} <strong>${fmtPrice(totalValue)}</strong></span>`;
+        html += `<span>${dim('Total P/L')} <strong>${fmtPL(totalPL)}</strong> (${fmtPLPct(totalPLPct)})</span>`;
+        html += `<span>${dim('Positions')} <strong>${holdings.length}</strong></span>`;
+        html += `<span class="c-dim" style="font-size:10px">↻ updating every 5s</span>`;
+        html += `</div></div>`;
+
+        el.innerHTML = html;
+        bindSlashCommands();
+      }
 
       try {
-        const data = await fetchQuotes(holdings.map(h => h.sym));
+        const data = await fetchQuotes(allSyms);
         hideLoading();
-        usedLive = true;
 
-        rows = holdings.map(h => {
-          const q = data[h.sym];
-          const last = q ? q.price : mockData[h.sym]?.price || 0;
-          const pl = (last - h.avgCost) * h.qty;
-          const plPct = ((last / h.avgCost) - 1) * 100;
-          totalValue += last * h.qty;
-          totalPL += pl;
-          totalCost += h.avgCost * h.qty;
-          const plStr = pl >= 0 ? pos(`+$${Math.abs(pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`) : neg(`-$${Math.abs(pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
-          const pctStr = plPct >= 0 ? pos(`+${plPct.toFixed(1)}%`) : neg(`${plPct.toFixed(1)}%`);
-          return [tn(h.sym), String(h.qty), fmtPrice(h.avgCost), fmtPrice(last), plStr, pctStr];
-        });
+        // Create live container
+        printRaw(`<div id="${liveContainerId}"></div>`);
+        renderPortfolioTable(data);
+
+        // Start 5-second live polling
+        startLivePrices(allSyms, renderPortfolioTable);
+
       } catch (e) {
         hideLoading();
-        rows = holdings.map(h => {
-          const m = mockData[h.sym];
-          const last = m ? m.price : 0;
-          const pl = (last - h.avgCost) * h.qty;
-          const plPct = ((last / h.avgCost) - 1) * 100;
-          totalValue += last * h.qty;
-          totalPL += pl;
-          totalCost += h.avgCost * h.qty;
-          const plStr = pl >= 0 ? pos(`+$${Math.abs(pl).toFixed(2)}`) : neg(`-$${Math.abs(pl).toFixed(2)}`);
-          const pctStr = plPct >= 0 ? pos(`+${plPct.toFixed(1)}%`) : neg(`${plPct.toFixed(1)}%`);
-          return [tn(h.sym), String(h.qty), fmtPrice(h.avgCost), fmtPrice(last), plStr, pctStr];
-        });
+        // Static fallback with mock data
+        printRaw(`<div id="${liveContainerId}"></div>`);
+        renderPortfolioTable({});
       }
 
-      const totalPLStr = totalPL >= 0
-        ? pos(`<strong>+$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`)
-        : neg(`<strong>-$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`);
-      const totalPctStr = totalCost > 0
-        ? (totalPL >= 0 ? pos(`+${((totalPL / totalCost) * 100).toFixed(1)}%`) : neg(`${((totalPL / totalCost) * 100).toFixed(1)}%`))
-        : '';
-      const footer = ['', '', '', `<strong>${fmtPrice(totalValue)}</strong>`, totalPLStr, totalPctStr];
-
-      const badge = isUserPortfolio ? (usedLive ? 'LIVE' : 'SAVED') : (usedLive ? 'DEMO · LIVE' : 'DEMO');
-      printRaw(panel('Portfolio', table(['Ticker', 'Qty', 'Avg Cost', 'Last', 'P/L', '%'], rows, footer), badge));
       printBlank();
-
-      if (!isUserPortfolio && supabaseEnabled()) {
-        if (!currentUser) {
-          print(dim(`Demo portfolio shown. ${sc('/login')} or ${sc('/signup')} to track your own.`));
+      if (!isUserPortfolio) {
+        if (currentUser) {
+          print(dim(`Demo portfolio. ${sc('/add')} AAPL 10 150 to add your own holdings.`));
         } else {
-          print(dim(`No holdings found. Use ${sc('/add')} AAPL 10 150.00 to add stocks.`));
+          print(dim(`Demo portfolio. ${sc('/signup')} to save your own.`));
         }
-      } else if (!isUserPortfolio) {
-        print(dim(`Demo portfolio. Configure Supabase to save your own holdings.`));
       }
-
-      print(dim(`${sc('/analytics')} for allocation & stats  ·  ${sc('/chart')} <ticker> for charts`));
+      print(dim(`${sc('/analytics')} for deep stats  ·  ${sc('/chart')} <ticker> for charts  ·  ${sc('/history')} for trades`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -670,7 +695,7 @@
         try {
           const dbHoldings = await getHoldings();
           if (dbHoldings && dbHoldings.length > 0) {
-            holdings = dbHoldings.map(h => ({ sym: h.symbol, qty: h.qty, avgCost: h.avg_cost }));
+            holdings = dbHoldings.map(h => ({ sym: h.symbol, qty: Number(h.qty), avgCost: Number(h.avg_cost), type: h.asset_type }));
             isUserPortfolio = true;
           }
         } catch (e) {}
@@ -678,10 +703,12 @@
 
       if (!holdings) {
         holdings = [
-          { sym: 'AAPL',    qty: 50,  avgCost: 171.20 },
-          { sym: 'NVDA',    qty: 25,  avgCost: 480.50 },
-          { sym: 'TSLA',    qty: 10,  avgCost: 248.90 },
-          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100  },
+          { sym: 'AAPL', qty: 50, avgCost: 171.20, type: 'equity' },
+          { sym: 'NVDA', qty: 25, avgCost: 480.50, type: 'equity' },
+          { sym: 'TSLA', qty: 10, avgCost: 248.90, type: 'equity' },
+          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100, type: 'crypto' },
+          { sym: 'GLD', qty: 20, avgCost: 185.00, type: 'commodity' },
+          { sym: 'SPY', qty: 30, avgCost: 440.00, type: 'etf' },
         ];
       }
 
@@ -689,15 +716,14 @@
         const data = await fetchQuotes(holdings.map(h => h.sym));
         hideLoading();
 
-        // Calculate position values
         const positions = holdings.map(h => {
           const q = data[h.sym];
           const price = q ? q.price : mockData[h.sym]?.price || 0;
           const value = price * h.qty;
           const pl = (price - h.avgCost) * h.qty;
           const plPct = ((price / h.avgCost) - 1) * 100;
-          const change = q ? q.change : mockData[h.sym]?.change || 0;
-          return { sym: h.sym, qty: h.qty, avgCost: h.avgCost, price, value, pl, plPct, dayChange: change };
+          const change = q ? q.change : 0;
+          return { sym: h.sym, type: h.type, qty: h.qty, avgCost: h.avgCost, price, value, pl, plPct, dayChange: change };
         });
 
         const totalValue = positions.reduce((s, p) => s + p.value, 0);
@@ -706,55 +732,118 @@
         const totalPLPct = totalCost > 0 ? ((totalPL / totalCost) * 100) : 0;
         const dayPL = positions.reduce((s, p) => s + (p.value * p.dayChange / 100), 0);
 
-        // Summary stats
+        // Summary
         const summaryRows = [
           ['Total Value', `<strong>${fmtPrice(totalValue)}</strong>`],
-          ['Total P/L', totalPL >= 0 ? pos(`+$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${totalPLPct.toFixed(1)}%)`) : neg(`-$${Math.abs(totalPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${totalPLPct.toFixed(1)}%)`)],
-          ['Day P/L', dayPL >= 0 ? pos(`+$${Math.abs(dayPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`) : neg(`-$${Math.abs(dayPL).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`)],
+          ['Total P/L', `<strong>${fmtPL(totalPL)}</strong> (${fmtPLPct(totalPLPct)})`],
+          ['Day P/L', `<strong>${fmtPL(dayPL)}</strong>`],
           ['Positions', String(positions.length)],
-          ['Largest', positions.length ? tn(positions.reduce((a, b) => a.value > b.value ? a : b).sym) : '—'],
+          ['Asset Types', [...new Set(positions.map(p => ASSET_TYPES[p.type]?.label || p.type))].join(', ')],
+          ['Best Performer', positions.length ? `${tn(positions.reduce((a, b) => a.plPct > b.plPct ? a : b).sym)}` : '—'],
+          ['Worst Performer', positions.length ? `${tn(positions.reduce((a, b) => a.plPct < b.plPct ? a : b).sym)}` : '—'],
         ];
-        printRaw(panel('Summary', table(['Metric', 'Value'], summaryRows), isUserPortfolio ? 'YOUR PORTFOLIO' : 'DEMO'));
+        printRaw(panel('Portfolio Summary', table(['Metric', 'Value'], summaryRows), isUserPortfolio ? 'YOUR DATA' : 'DEMO'));
 
-        // Allocation bar
+        // Allocation by position
         let allocHtml = '<div class="alloc-bar">';
         positions.forEach((p, i) => {
           const pct = totalValue > 0 ? (p.value / totalValue * 100) : 0;
           const color = ALLOC_COLORS[i % ALLOC_COLORS.length];
           allocHtml += `<div class="alloc-segment" style="width:${pct}%;background:${color}" title="${p.sym}: ${pct.toFixed(1)}%">${pct >= 8 ? p.sym : ''}</div>`;
         });
-        allocHtml += '</div>';
-
-        allocHtml += '<div class="alloc-legend">';
+        allocHtml += '</div><div class="alloc-legend">';
         positions.forEach((p, i) => {
           const pct = totalValue > 0 ? (p.value / totalValue * 100) : 0;
           const color = ALLOC_COLORS[i % ALLOC_COLORS.length];
           allocHtml += `<span class="alloc-legend-item"><span class="alloc-swatch" style="background:${color}"></span>${p.sym} ${pct.toFixed(1)}%</span>`;
         });
         allocHtml += '</div>';
-        printRaw(panel('Allocation', allocHtml));
+        printRaw(panel('Allocation by Position', allocHtml));
 
-        // Top gainers / losers
-        const sorted = [...positions].sort((a, b) => b.plPct - a.plPct);
-        const gainLossRows = sorted.map(p => {
-          const plStr = p.pl >= 0
-            ? pos(`+$${Math.abs(p.pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`)
-            : neg(`-$${Math.abs(p.pl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
-          const pctStr = p.plPct >= 0
-            ? pos(`+${p.plPct.toFixed(1)}%`)
-            : neg(`${p.plPct.toFixed(1)}%`);
-          return [tn(p.sym), fmtPrice(p.value), plStr, pctStr];
+        // Allocation by asset type
+        const typeGroups = {};
+        positions.forEach(p => {
+          if (!typeGroups[p.type]) typeGroups[p.type] = 0;
+          typeGroups[p.type] += p.value;
         });
-        printRaw(panel('Performance', table(['Ticker', 'Value', 'P/L', '%'], gainLossRows)));
+        let typeAllocHtml = '<div class="alloc-bar">';
+        const typeColors = { equity: '#5f87ff', etf: '#5faf5f', bond: '#d7af5f', commodity: '#ff875f', crypto: '#af5faf' };
+        Object.entries(typeGroups).forEach(([type, val]) => {
+          const pct = totalValue > 0 ? (val / totalValue * 100) : 0;
+          const color = typeColors[type] || '#555';
+          const label = ASSET_TYPES[type]?.label || type;
+          typeAllocHtml += `<div class="alloc-segment" style="width:${pct}%;background:${color}">${pct >= 12 ? label : ''}</div>`;
+        });
+        typeAllocHtml += '</div><div class="alloc-legend">';
+        Object.entries(typeGroups).forEach(([type, val]) => {
+          const pct = totalValue > 0 ? (val / totalValue * 100) : 0;
+          const color = typeColors[type] || '#555';
+          const label = ASSET_TYPES[type]?.label || type;
+          typeAllocHtml += `<span class="alloc-legend-item"><span class="alloc-swatch" style="background:${color}"></span>${label} ${pct.toFixed(1)}% (${fmtPrice(val)})</span>`;
+        });
+        typeAllocHtml += '</div>';
+        printRaw(panel('Allocation by Asset Type', typeAllocHtml));
+
+        // Performance ranking
+        const sorted = [...positions].sort((a, b) => b.plPct - a.plPct);
+        const perfRows = sorted.map(p => [
+          `${ASSET_TYPES[p.type]?.icon || '·'} ${tn(p.sym)}`,
+          dim(ASSET_TYPES[p.type]?.label || p.type),
+          fmtPrice(p.value),
+          fmtPL(p.pl),
+          fmtPLPct(p.plPct),
+        ]);
+        printRaw(panel('Performance Ranking', table(['Ticker', 'Type', 'Value', 'P/L', '%'], perfRows)));
 
       } catch (e) {
         hideLoading();
-        printLines([
-          `<span class="c-red">Failed to load analytics</span>`,
-          dim('Could not fetch current prices. Try again later.'),
-        ]);
+        printLines([`<span class="c-red">Failed to load analytics.</span> ${dim('Try again later.')}`]);
+      }
+      printBlank();
+      bindSlashCommands();
+      scrollToBottom();
+    },
+
+    '/history': async function() {
+      if (!sb || !currentUser) {
+        printLines([`<span class="c-yellow">Sign in to view transaction history.</span> ${sc('/login')}`]);
+        return;
       }
 
+      showLoading('Fetching transactions...');
+      try {
+        const txns = await getTransactions(25);
+        hideLoading();
+
+        if (txns.length === 0) {
+          printLines([
+            dim('No transactions yet.'),
+            `Use ${sc('/add')} to buy shares or ${sc('/sell')} to record sales.`,
+          ]);
+          return;
+        }
+
+        const rows = txns.map(t => {
+          const date = new Date(t.executed_at).toLocaleDateString();
+          const actionTag = t.action === 'buy' ? tag('bull', 'BUY') : tag('bear', 'SELL');
+          const typeIcon = ASSET_TYPES[t.asset_type]?.icon || '·';
+          const total = (t.qty * t.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          return [
+            dim(date),
+            actionTag,
+            `${typeIcon} ${tn(t.symbol)}`,
+            String(t.qty),
+            fmtPrice(t.price),
+            `$${total}`,
+            t.fees > 0 ? dim(`$${t.fees}`) : dim('—'),
+          ];
+        });
+
+        printRaw(panel('Transaction History', table(['Date', 'Action', 'Ticker', 'Qty', 'Price', 'Total', 'Fees'], rows), `${txns.length} TRADES`));
+      } catch (e) {
+        hideLoading();
+        printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+      }
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -762,16 +851,12 @@
 
     '/watchlist': async function() {
       showLoading('Fetching watchlist...');
-      let usedLive = false;
-
       try {
         const [quotes, ...charts] = await Promise.all([
           fetchQuotes(watchlistSymbols),
           ...watchlistSymbols.map(s => fetchChartData(s).catch(() => null)),
         ]);
         hideLoading();
-        usedLive = true;
-
         const rows = watchlistSymbols.map((sym, i) => {
           const q = quotes[sym];
           const chart = charts[i];
@@ -779,22 +864,20 @@
           if (!q) return [tn(sym), dim('—'), dim('—'), spark];
           return [tn(sym), fmtPrice(q.price), fmtChange(q.change), spark];
         });
-
         printRaw(panel('Watchlist', table(['Ticker', 'Price', 'Change', '30d'], rows), 'LIVE'));
       } catch (e) {
         hideLoading();
         const rows = [
-          [tn('MSFT'),  '$415.20', fmtChange(1.20),  dim('▁▂▃▄▅▆▇█▇▆▅▆▇█')],
-          [tn('GOOGL'), '$152.87', fmtChange(0.82),   dim('▃▄▅▄▃▄▅▆▇▆▅▆▇▆')],
-          [tn('AMZN'),  '$178.12', fmtChange(-0.31),  dim('▆▇▆▅▄▃▂▃▄▅▄▃▂▃')],
-          [tn('META'),  '$501.33', fmtChange(2.08),   dim('▂▃▄▅▆▇█▇▆▇████')],
-          [tn('AMD'),   '$168.90', fmtChange(-1.42),  dim('█▇▆▅▄▃▂▃▄▃▂▁▂▃')],
+          [tn('MSFT'), '$415.20', fmtChange(1.20), dim('▁▂▃▄▅▆▇█▇▆▅▆▇█')],
+          [tn('GOOGL'), '$152.87', fmtChange(0.82), dim('▃▄▅▄▃▄▅▆▇▆▅▆▇▆')],
+          [tn('AMZN'), '$178.12', fmtChange(-0.31), dim('▆▇▆▅▄▃▂▃▄▅▄▃▂▃')],
+          [tn('META'), '$501.33', fmtChange(2.08), dim('▂▃▄▅▆▇█▇▆▇████')],
+          [tn('AMD'), '$168.90', fmtChange(-1.42), dim('█▇▆▅▄▃▂▃▄▃▂▁▂▃')],
         ];
         printRaw(panel('Watchlist', table(['Ticker', 'Price', 'Change', '30d'], rows), 'DEMO'));
       }
-
       printBlank();
-      print(dim(`${watchlistSymbols.length} tickers tracked  ·  ${sc('/quote')} <ticker> for details`));
+      print(dim(`${sc('/quote')} <ticker> for details`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -802,174 +885,114 @@
 
     '/alerts': function() {
       const rows = [
-        [tag('neutral', '!'), tn('NVDA'),    'Above $750.00',  tag('neutral', 'WATCHING')],
-        [tag('neutral', '!'), tn('BTC-USD'), 'Above $70,000',  tag('neutral', 'WATCHING')],
-        [tag('bull', '✓'),    tn('AAPL'),    'Above $185.00',  tag('bull', 'TRIGGERED')],
+        [tag('neutral', '!'), tn('NVDA'), 'Above $750.00', tag('neutral', 'WATCHING')],
+        [tag('neutral', '!'), tn('BTC-USD'), 'Above $70,000', tag('neutral', 'WATCHING')],
+        [tag('bull', '✓'), tn('AAPL'), 'Above $185.00', tag('bull', 'TRIGGERED')],
       ];
-
       printRaw(panel('Price Alerts', table(['', 'Ticker', 'Condition', 'Status'], rows)));
       printBlank();
-      print(dim('3 active alerts  ·  Polling every 60s'));
+      print(dim('3 active alerts'));
       printBlank();
       scrollToBottom();
     },
 
     '/news': function() {
       const items = [
-        [tag('bull', 'BULL'),    'Fed signals rate cuts ahead as inflation cools'],
-        [tag('bull', 'BULL'),    'NVIDIA beats earnings expectations, AI demand surges'],
-        [tag('bear', 'BEAR'),    'Treasury yields spike on labor market data'],
-        [tag('neutral', '——'),   'Apple unveils new AI features at developer event'],
-        [tag('bull', 'BULL'),    'S&P 500 hits new all-time high'],
-        [tag('bear', 'BEAR'),    'Oil prices jump on Middle East tensions'],
+        [tag('bull', 'BULL'), 'Fed signals rate cuts ahead as inflation cools'],
+        [tag('bull', 'BULL'), 'NVIDIA beats earnings expectations, AI demand surges'],
+        [tag('bear', 'BEAR'), 'Treasury yields spike on labor market data'],
+        [tag('neutral', '——'), 'Apple unveils new AI features at developer event'],
+        [tag('bull', 'BULL'), 'S&P 500 hits new all-time high'],
+        [tag('bear', 'BEAR'), 'Oil prices jump on Middle East tensions'],
       ];
-
       printRaw(panel('Financial News', table(['Signal', 'Headline'], items)));
-      printBlank();
-      print(dim('Source: aggregated financial feeds'));
       printBlank();
       scrollToBottom();
     },
 
     '/signup': async function() {
       if (!supabaseEnabled()) {
-        printLines([
-          `<span class="c-red">Supabase not configured</span>`,
-          dim('Set SUPABASE_URL and SUPABASE_ANON in terminal.js'),
-          dim('Get a free project at supabase.com'),
-        ]);
+        printLines([`<span class="c-red">Supabase not configured</span>`]);
         return;
       }
       if (currentUser) {
-        printLines([
-          `<span class="c-yellow">Already signed in as</span> ${currentUser.email}`,
-          `Use ${sc('/logout')} to sign out first.`,
-        ]);
+        printLines([`<span class="c-yellow">Already signed in as</span> ${currentUser.email}. ${sc('/logout')} first.`]);
         return;
       }
-
-      // Render inline form
-      const formId = 'signup-form-' + Date.now();
-      printRaw(`<div id="${formId}" class="tui-panel" style="margin:6px 0">
-        <div class="tui-panel-title" style="background:var(--bg-hover)">SIGN UP</div>
-        <div class="tui-panel-body">
-          <div class="auth-form-row"><span class="c-dim" style="width:60px">Email:</span><input type="email" class="auth-input" id="${formId}-email" placeholder="you@email.com"></div>
-          <div class="auth-form-row"><span class="c-dim" style="width:60px">Pass:</span><input type="password" class="auth-input" id="${formId}-pass" placeholder="min 6 characters"></div>
-          <div class="auth-form-row" style="margin-top:8px"><button class="auth-btn" id="${formId}-btn">CREATE ACCOUNT</button></div>
-          <div id="${formId}-msg" style="margin-top:6px"></div>
-        </div>
-      </div>`);
-
+      const fid = 'signup-' + Date.now();
+      printRaw(`<div class="tui-panel" style="margin:6px 0"><div class="tui-panel-title" style="background:var(--bg-hover)">SIGN UP</div><div class="tui-panel-body">
+        <div class="auth-form-row"><span class="c-dim" style="min-width:50px">Email</span><input type="email" class="auth-input" id="${fid}-e" placeholder="you@email.com"></div>
+        <div class="auth-form-row"><span class="c-dim" style="min-width:50px">Pass</span><input type="password" class="auth-input" id="${fid}-p" placeholder="min 6 chars"></div>
+        <div class="auth-form-row" style="margin-top:8px"><button class="auth-btn" id="${fid}-b">CREATE ACCOUNT</button></div>
+        <div id="${fid}-m" style="margin-top:6px"></div>
+      </div></div>`);
       scrollToBottom();
-
-      const btn = document.getElementById(`${formId}-btn`);
-      btn.addEventListener('click', async () => {
-        const email = document.getElementById(`${formId}-email`).value.trim();
-        const pass = document.getElementById(`${formId}-pass`).value;
-        const msgEl = document.getElementById(`${formId}-msg`);
-
-        if (!email || !pass) { msgEl.innerHTML = `<span class="c-red">Email and password required</span>`; return; }
-        if (pass.length < 6) { msgEl.innerHTML = `<span class="c-red">Password must be at least 6 characters</span>`; return; }
-
-        msgEl.innerHTML = `<span class="c-dim loading-dots">Creating account</span>`;
+      document.getElementById(`${fid}-b`).addEventListener('click', async () => {
+        const email = document.getElementById(`${fid}-e`).value.trim();
+        const pass = document.getElementById(`${fid}-p`).value;
+        const msg = document.getElementById(`${fid}-m`);
+        if (!email || !pass) { msg.innerHTML = '<span class="c-red">Email and password required</span>'; return; }
+        if (pass.length < 6) { msg.innerHTML = '<span class="c-red">Password must be 6+ chars</span>'; return; }
+        msg.innerHTML = '<span class="c-dim loading-dots">Creating account</span>';
         const { data, error } = await sb.auth.signUp({ email, password: pass });
-
-        if (error) {
-          msgEl.innerHTML = `<span class="c-red">${error.message}</span>`;
-        } else if (data.user && !data.session) {
-          msgEl.innerHTML = `<span class="c-green">Check your email for a confirmation link!</span>`;
-        } else {
-          msgEl.innerHTML = `<span class="c-green">Account created! You're signed in.</span>`;
-        }
+        if (error) msg.innerHTML = `<span class="c-red">${error.message}</span>`;
+        else if (data.user && !data.session) msg.innerHTML = '<span class="c-green">Check email for confirmation link!</span>';
+        else msg.innerHTML = `<span class="c-green">Signed in! Try ${sc('/portfolio')}</span>`;
+        bindSlashCommands();
         scrollToBottom();
       });
     },
 
     '/login': async function() {
-      if (!supabaseEnabled()) {
-        printLines([
-          `<span class="c-red">Supabase not configured</span>`,
-          dim('Set SUPABASE_URL and SUPABASE_ANON in terminal.js'),
-        ]);
-        return;
-      }
-      if (currentUser) {
-        printLines([
-          `<span class="c-yellow">Already signed in as</span> ${currentUser.email}`,
-          `Use ${sc('/logout')} to sign out first.`,
-        ]);
-        return;
-      }
-
-      const formId = 'login-form-' + Date.now();
-      printRaw(`<div id="${formId}" class="tui-panel" style="margin:6px 0">
-        <div class="tui-panel-title" style="background:var(--bg-hover)">SIGN IN</div>
-        <div class="tui-panel-body">
-          <div class="auth-form-row"><span class="c-dim" style="width:60px">Email:</span><input type="email" class="auth-input" id="${formId}-email" placeholder="you@email.com"></div>
-          <div class="auth-form-row"><span class="c-dim" style="width:60px">Pass:</span><input type="password" class="auth-input" id="${formId}-pass" placeholder="password"></div>
-          <div class="auth-form-row" style="margin-top:8px"><button class="auth-btn" id="${formId}-btn">SIGN IN</button></div>
-          <div id="${formId}-msg" style="margin-top:6px"></div>
-        </div>
-      </div>`);
-
+      if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+      if (currentUser) { printLines([`<span class="c-yellow">Already signed in.</span> ${sc('/logout')} first.`]); return; }
+      const fid = 'login-' + Date.now();
+      printRaw(`<div class="tui-panel" style="margin:6px 0"><div class="tui-panel-title" style="background:var(--bg-hover)">SIGN IN</div><div class="tui-panel-body">
+        <div class="auth-form-row"><span class="c-dim" style="min-width:50px">Email</span><input type="email" class="auth-input" id="${fid}-e" placeholder="you@email.com"></div>
+        <div class="auth-form-row"><span class="c-dim" style="min-width:50px">Pass</span><input type="password" class="auth-input" id="${fid}-p" placeholder="password"></div>
+        <div class="auth-form-row" style="margin-top:8px"><button class="auth-btn" id="${fid}-b">SIGN IN</button></div>
+        <div id="${fid}-m" style="margin-top:6px"></div>
+      </div></div>`);
       scrollToBottom();
-
-      const btn = document.getElementById(`${formId}-btn`);
-      btn.addEventListener('click', async () => {
-        const email = document.getElementById(`${formId}-email`).value.trim();
-        const pass = document.getElementById(`${formId}-pass`).value;
-        const msgEl = document.getElementById(`${formId}-msg`);
-
-        if (!email || !pass) { msgEl.innerHTML = `<span class="c-red">Email and password required</span>`; return; }
-
-        msgEl.innerHTML = `<span class="c-dim loading-dots">Signing in</span>`;
+      document.getElementById(`${fid}-b`).addEventListener('click', async () => {
+        const email = document.getElementById(`${fid}-e`).value.trim();
+        const pass = document.getElementById(`${fid}-p`).value;
+        const msg = document.getElementById(`${fid}-m`);
+        if (!email || !pass) { msg.innerHTML = '<span class="c-red">Email and password required</span>'; return; }
+        msg.innerHTML = '<span class="c-dim loading-dots">Signing in</span>';
         const { error } = await sb.auth.signInWithPassword({ email, password: pass });
-
-        if (error) {
-          msgEl.innerHTML = `<span class="c-red">${error.message}</span>`;
-        } else {
-          msgEl.innerHTML = `<span class="c-green">Signed in! Use ${sc('/portfolio')} to view your holdings.</span>`;
-          bindSlashCommands();
-        }
+        if (error) msg.innerHTML = `<span class="c-red">${error.message}</span>`;
+        else msg.innerHTML = `<span class="c-green">Signed in! Try ${sc('/portfolio')}</span>`;
+        bindSlashCommands();
         scrollToBottom();
       });
     },
 
     '/logout': async function() {
-      if (!supabaseEnabled()) {
-        printLines([`<span class="c-red">Supabase not configured</span>`]);
-        return;
-      }
-      if (!currentUser) {
-        printLines([`<span class="c-yellow">Not signed in.</span> Use ${sc('/login')} to sign in.`]);
-        return;
-      }
+      if (!currentUser) { printLines([`<span class="c-yellow">Not signed in.</span>`]); return; }
+      stopLivePrices();
       await sb.auth.signOut();
-      printLines([
-        `<span class="c-green">Signed out successfully.</span>`,
-      ]);
+      printLines([`<span class="c-green">Signed out.</span>`]);
     },
 
     '/about': function() {
       printLines([
         bright('About WealthWatch'),
         '',
-        '  WealthWatch is a terminal-style finance dashboard for',
-        '  tracking markets, portfolios, and financial data.',
+        '  Terminal-style finance dashboard for tracking markets,',
+        '  portfolios, and financial data across asset classes.',
         '',
         `  <span class="c-dim">No bloat. No clutter. Just data.</span>`,
         '',
         `  <span class="c-cyan">Markets</span>      Real-time quotes via Yahoo Finance`,
-        `  <span class="c-cyan">Portfolio</span>    Track positions with live P/L`,
+        `  <span class="c-cyan">Portfolio</span>    Multi-asset with 5s live prices`,
         `  <span class="c-cyan">Charts</span>       Interactive TradingView charts`,
-        `  <span class="c-cyan">Analytics</span>    Allocation, performance & stats`,
-        `  <span class="c-cyan">Accounts</span>     Supabase auth — save your portfolio`,
-        `  <span class="c-cyan">Watchlist</span>    Monitor favorites with sparklines`,
-        `  <span class="c-cyan">Alerts</span>       Price triggers with polling`,
-        `  <span class="c-cyan">News</span>         Aggregated headlines with sentiment`,
+        `  <span class="c-cyan">Analytics</span>    Allocation by position & asset type`,
+        `  <span class="c-cyan">History</span>      Full transaction audit trail`,
+        `  <span class="c-cyan">Accounts</span>     Supabase auth with RLS`,
         '',
+        `  ${dim('Assets:')}   Equities, ETFs, Bonds, Commodities, Crypto`,
         `  ${dim('GitHub:')}   github.com/Scolliq/wealthwatch`,
-        `  ${dim('License:')}  MIT`,
         `  ${dim('Status:')}   <span class="c-green">● Operational</span>`,
       ]);
     },
@@ -977,46 +1000,31 @@
     '/stack': function() {
       const arch = isMobile ? [
         `  <span class="c-cyan">BROWSER</span> <span class="c-dim">→</span> <span class="c-cyan">VERCEL</span> <span class="c-dim">→</span> <span class="c-cyan">YAHOO</span>`,
-        `  <span class="c-dim">(Terminal)  (API)    (Finance)</span>`,
         `  <span class="c-dim">      ↕</span>`,
-        `  <span class="c-cyan">SUPABASE</span>`,
-        `  <span class="c-dim">(Auth + DB)</span>`,
+        `  <span class="c-cyan">SUPABASE</span> <span class="c-dim">(Auth + PostgreSQL)</span>`,
       ] : [
         `  <span class="c-dim">┌──────────┐    ┌──────────┐    ┌──────────┐</span>`,
         `  <span class="c-dim">│</span> <span class="c-cyan">BROWSER</span>  <span class="c-dim">│───▶│</span> <span class="c-cyan">VERCEL</span>   <span class="c-dim">│───▶│</span> <span class="c-cyan">YAHOO</span>    <span class="c-dim">│</span>`,
-        `  <span class="c-dim">│</span> Terminal  <span class="c-dim">│    │</span> API      <span class="c-dim">│    │</span> Finance  <span class="c-dim">│</span>`,
-        `  <span class="c-dim">│</span> UI / JS   <span class="c-dim">│◀───│</span> /api/    <span class="c-dim">│◀───│</span> API v7/8 <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> Terminal  <span class="c-dim">│◀───│</span> /api/    <span class="c-dim">│◀───│</span> Finance  <span class="c-dim">│</span>`,
         `  <span class="c-dim">└────┬─────┘    └──────────┘    └──────────┘</span>`,
-        `  <span class="c-dim">     │</span>`,
         `  <span class="c-dim">     ▼</span>`,
         `  <span class="c-dim">┌──────────┐</span>`,
-        `  <span class="c-dim">│</span> <span class="c-cyan">SUPABASE</span> <span class="c-dim">│</span>`,
-        `  <span class="c-dim">│</span> Auth+DB  <span class="c-dim">│</span>`,
+        `  <span class="c-dim">│</span> <span class="c-cyan">SUPABASE</span> <span class="c-dim">│  Auth + PostgreSQL + RLS</span>`,
         `  <span class="c-dim">└──────────┘</span>`,
       ];
       printLines([
-        bright('Architecture'),
-        '',
-        ...arch,
-        '',
-        bright('Tech Stack'),
-        '',
-        `  <span class="c-cyan">Frontend</span>`,
-        `  <span class="c-dim">├──</span> HTML/CSS/JS          Vanilla, no framework`,
-        `  <span class="c-dim">├──</span> Lightweight Charts   TradingView charting`,
-        `  <span class="c-dim">├──</span> Supabase JS          Auth & database`,
-        `  <span class="c-dim">├──</span> Yahoo Finance        Real-time market data`,
-        `  <span class="c-dim">├──</span> 30s cache            Avoid rate limiting`,
-        `  <span class="c-dim">└──</span> Vercel               Static hosting`,
-        '',
-        `  <span class="c-cyan">Backend</span>`,
-        `  <span class="c-dim">├──</span> Supabase             Auth, PostgreSQL, RLS`,
-        `  <span class="c-dim">├──</span> Vercel Serverless    CORS proxy for Yahoo`,
-        `  <span class="c-dim">└──</span> Yahoo Finance v8     Quote + chart data`,
+        bright('Architecture'), '', ...arch, '',
+        bright('Tech Stack'), '',
+        `  <span class="c-dim">├──</span> Lightweight Charts   TradingView interactive charts`,
+        `  <span class="c-dim">├──</span> Supabase JS          Auth, PostgreSQL, Row-Level Security`,
+        `  <span class="c-dim">├──</span> Yahoo Finance v8     Quotes + OHLC chart data`,
+        `  <span class="c-dim">├──</span> 5s live polling      Real-time portfolio prices`,
+        `  <span class="c-dim">└──</span> Vercel               Hosting + serverless CORS proxy`,
       ]);
     },
 
     '/clear': function() {
+      stopLivePrices();
       output.innerHTML = '';
     },
   };
@@ -1024,127 +1032,71 @@
   // ─── Dynamic commands ─────────────────────────────────
 
   async function quoteCmd(ticker) {
-    if (!ticker) {
-      printLines([
-        `<span class="c-red">Usage:</span> /quote <ticker>`,
-        `${dim('Example:')} ${sc('/quote AAPL')}`,
-        '',
-        dim('Try any ticker symbol (e.g. AAPL, NVDA, TSLA, BTC-USD, ETH-USD, SPY, MSFT)'),
-      ]);
-      return;
-    }
-
+    if (!ticker) { printLines([`<span class="c-red">Usage:</span> /quote <ticker>`, `${dim('Example:')} ${sc('/quote AAPL')}`]); return; }
     const sym = ticker.toUpperCase();
     showLoading(`Fetching ${sym}...`);
-
     try {
       const data = await fetchQuotes([sym]);
       hideLoading();
       const q = data[sym];
-
-      if (!q) {
-        printLines([
-          `<span class="c-red">No data found for:</span> ${sym}`,
-          dim('Check the ticker symbol and try again.'),
-        ]);
-        return;
-      }
-
+      if (!q) { printLines([`<span class="c-red">No data for:</span> ${sym}`]); return; }
+      const type = detectAssetType(sym);
+      const typeLabel = ASSET_TYPES[type]?.label || type;
       const rows = [
-        ['Price',      `<strong>${fmtPrice(q.price)}</strong>`, fmtChange(q.change)],
-        ['Day High',   fmtPrice(q.high), ''],
-        ['Day Low',    fmtPrice(q.low), ''],
-        ['Open',       fmtPrice(q.open), ''],
-        ['Prev Close', fmtPrice(q.prevClose), ''],
-        ['Volume',     q.vol, ''],
-        ['Market Cap', q.cap ? '$' + q.cap : '—', ''],
+        ['Price', `<strong>${fmtPrice(q.price)}</strong>`, fmtChange(q.change)],
+        ['Day High', fmtPrice(q.high), ''], ['Day Low', fmtPrice(q.low), ''],
+        ['Open', fmtPrice(q.open), ''], ['Prev Close', fmtPrice(q.prevClose), ''],
+        ['Volume', q.vol, ''], ['Market Cap', q.cap ? '$' + q.cap : '—', ''],
+        ['Type', `${ASSET_TYPES[type]?.icon || ''} ${typeLabel}`, ''],
       ];
-
       printRaw(panel(`${sym} · ${q.name}`, table(['Metric', 'Value', ''], rows), 'LIVE'));
       printBlank();
-      print(dim(`Live data  ·  ${sc('/chart ' + sym)} for interactive chart`));
-
+      print(dim(`${sc('/chart ' + sym)} for chart  ·  ${sc('/add ' + sym + ' 10 ' + q.price.toFixed(2))} to buy`));
     } catch (e) {
       hideLoading();
       const m = mockData[sym];
       if (m) {
-        const rows = [
-          ['Price',      `<strong>${fmtPrice(m.price)}</strong>`, fmtChange(m.change)],
-          ['Day High',   fmtPrice(m.high), ''],
-          ['Day Low',    fmtPrice(m.low), ''],
-          ['Volume',     m.vol, ''],
-          ['Market Cap', '$' + m.cap, ''],
-        ];
+        const rows = [['Price', `<strong>${fmtPrice(m.price)}</strong>`, fmtChange(m.change)], ['Volume', m.vol, ''], ['Cap', '$' + m.cap, '']];
         printRaw(panel(`${sym} · ${m.name}`, table(['Metric', 'Value', ''], rows), 'DEMO'));
-        printBlank();
-        print(dim(`Demo data (API unavailable)  ·  ${sc('/chart ' + sym)} for chart`));
       } else {
-        printLines([
-          `<span class="c-red">Failed to fetch:</span> ${sym}`,
-          dim('API unavailable. Try again later.'),
-        ]);
+        printLines([`<span class="c-red">Failed to fetch:</span> ${sym}`]);
       }
     }
-
     printBlank();
     bindSlashCommands();
     scrollToBottom();
   }
 
   async function chartCmd(ticker) {
-    if (!ticker) {
-      printLines([
-        `<span class="c-red">Usage:</span> /chart <ticker>`,
-        `${dim('Example:')} ${sc('/chart NVDA')}`,
-      ]);
-      return;
-    }
-
+    if (!ticker) { printLines([`<span class="c-red">Usage:</span> /chart <ticker>`, `${dim('Example:')} ${sc('/chart NVDA')}`]); return; }
     const sym = ticker.toUpperCase();
     showLoading(`Fetching chart for ${sym}...`);
-
     try {
       const data = await fetchChartData(sym);
       hideLoading();
-
-      if (data.closes.length < 2) {
-        printLines([`<span class="c-red">Not enough data for:</span> ${sym}`]);
-        return;
-      }
+      if (data.closes.length < 2) { printLines([`<span class="c-red">Not enough data for:</span> ${sym}`]); return; }
 
       const trend = data.closes[data.closes.length - 1] >= data.closes[0];
       const changeVal = ((data.closes[data.closes.length - 1] / data.closes[0]) - 1) * 100;
       const changeStr = changeVal >= 0 ? `+${changeVal.toFixed(2)}%` : `${changeVal.toFixed(2)}%`;
       const trendCls = trend ? 'positive' : 'negative';
+      const min = Math.min(...data.closes), max = Math.max(...data.closes), last = data.closes[data.closes.length - 1];
 
-      const min = Math.min(...data.closes);
-      const max = Math.max(...data.closes);
-      const last = data.closes[data.closes.length - 1];
-
-      // Create chart container
       const chartId = 'tv-chart-' + Date.now();
-      const statsHtml = `
-        <div class="chart-stats">
-          <span class="chart-stat"><span class="chart-stat-label">Last</span> <span class="chart-stat-value">${fmtPrice(last)}</span></span>
-          <span class="chart-stat"><span class="chart-stat-label">30d</span> <span class="${trendCls}">${changeStr}</span></span>
-          <span class="chart-stat"><span class="chart-stat-label">High</span> <span class="chart-stat-value">${fmtPrice(max)}</span></span>
-          <span class="chart-stat"><span class="chart-stat-label">Low</span> <span class="chart-stat-value">${fmtPrice(min)}</span></span>
-        </div>
-      `;
-
-      const chartHtml = `<div class="chart-container" id="${chartId}"></div>${statsHtml}`;
-      printRaw(panel(`${sym} · 30D CHART`, chartHtml, 'LIVE'));
-
-      // Render TradingView chart after DOM insertion
-      requestAnimationFrame(() => renderChart(chartId, data, sym));
-
+      const statsHtml = `<div class="chart-stats">
+        <span class="chart-stat"><span class="chart-stat-label">Last</span> <span class="chart-stat-value">${fmtPrice(last)}</span></span>
+        <span class="chart-stat"><span class="chart-stat-label">30d</span> <span class="${trendCls}">${changeStr}</span></span>
+        <span class="chart-stat"><span class="chart-stat-label">High</span> <span class="chart-stat-value">${fmtPrice(max)}</span></span>
+        <span class="chart-stat"><span class="chart-stat-label">Low</span> <span class="chart-stat-value">${fmtPrice(min)}</span></span>
+      </div>`;
+      printRaw(panel(`${sym} · 30D CHART`, `<div class="chart-container" id="${chartId}"></div>${statsHtml}`, 'LIVE'));
+      requestAnimationFrame(() => renderChart(chartId, data));
     } catch (e) {
       hideLoading();
-      // Fallback to ASCII
       const m = mockData[sym];
       if (m) {
         const b = m.price;
-        const chartLines = [
+        const lines = [
           `  ${fmtPrice(b*1.04).padStart(10)} ┤                                      ╭──`,
           `  ${fmtPrice(b*1.02).padStart(10)} ┤                           ╭──╮   ╭──╯`,
           `  ${fmtPrice(b*1.00).padStart(10)} ┤           ╭───╮      ╭────╯  ╰───╯`,
@@ -1154,38 +1106,30 @@
           `             └──────────────────────────────────────`,
           `  ${dim('           -30d              -15d              now')}`,
         ];
-        printRaw(panel(`${sym} · 30D CHART`, `<div class="ascii-art">${chartLines.join('\n')}</div>`, 'DEMO'));
+        printRaw(panel(`${sym} · 30D CHART`, `<div class="ascii-art">${lines.join('\n')}</div>`, 'DEMO'));
       } else {
-        printLines([
-          `<span class="c-red">Failed to fetch chart for:</span> ${sym}`,
-          dim('API unavailable. Try again later.'),
-        ]);
+        printLines([`<span class="c-red">Failed to fetch chart for:</span> ${sym}`]);
       }
     }
-
     printBlank();
     bindSlashCommands();
     scrollToBottom();
   }
 
   async function addCmd(parts) {
-    if (!supabaseEnabled()) {
-      printLines([`<span class="c-red">Supabase not configured.</span> Set URL & key in terminal.js`]);
-      return;
-    }
-    if (!currentUser) {
-      printLines([`<span class="c-yellow">Sign in first.</span> Use ${sc('/login')} or ${sc('/signup')}`]);
-      return;
-    }
+    if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+    if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
 
-    // /add AAPL 10 150.00
+    // /add AAPL 10 150.00 [equity|bond|commodity|crypto|etf]
     if (parts.length < 4) {
       printLines([
-        `<span class="c-red">Usage:</span> /add <SYMBOL> <QTY> <AVG_COST>`,
-        `${dim('Example:')} ${sc('/add AAPL 10 150.00')}`,
-        '',
-        dim('Adds shares to your portfolio. If you already hold the ticker,'),
-        dim('it will calculate a weighted average cost basis.'),
+        `<span class="c-red">Usage:</span> /add <SYMBOL> <QTY> <COST> [type]`,
+        '', dim('Examples:'),
+        `  ${sc('/add AAPL 10 150.00')}          ${dim('equity (auto-detected)')}`,
+        `  ${sc('/add BTC-USD 0.5 42000')}       ${dim('crypto (auto-detected)')}`,
+        `  ${sc('/add GLD 20 185 commodity')}     ${dim('override type')}`,
+        `  ${sc('/add TLT 50 95.00 bond')}        ${dim('bond')}`,
+        '', dim('Types: equity, etf, bond, commodity, crypto'),
       ]);
       return;
     }
@@ -1193,23 +1137,55 @@
     const sym = parts[1].toUpperCase();
     const qty = parseFloat(parts[2]);
     const cost = parseFloat(parts[3]);
+    const typeOverride = parts[4]?.toLowerCase();
+    const assetType = typeOverride && ASSET_TYPES[typeOverride] ? typeOverride : detectAssetType(sym);
 
-    if (isNaN(qty) || qty <= 0) {
-      printLines([`<span class="c-red">Invalid quantity:</span> ${parts[2]}`]);
-      return;
-    }
-    if (isNaN(cost) || cost <= 0) {
-      printLines([`<span class="c-red">Invalid cost:</span> ${parts[3]}`]);
-      return;
-    }
+    if (isNaN(qty) || qty <= 0) { printLines([`<span class="c-red">Invalid qty:</span> ${parts[2]}`]); return; }
+    if (isNaN(cost) || cost < 0) { printLines([`<span class="c-red">Invalid cost:</span> ${parts[3]}`]); return; }
 
-    showLoading(`Adding ${sym}...`);
+    showLoading(`Adding ${qty} ${sym}...`);
     try {
-      await addHolding(sym, qty, cost);
+      await addHolding(sym, qty, cost, assetType, new Date().toISOString().split('T')[0]);
       hideLoading();
       printLines([
-        `<span class="c-green">Added ${qty} shares of ${sym} at ${fmtPrice(cost)}</span>`,
-        dim(`Use ${sc('/portfolio')} to see your updated holdings.`),
+        `<span class="c-green">Bought ${qty} × ${sym} @ ${fmtPrice(cost)}</span>  ${dim(ASSET_TYPES[assetType]?.icon + ' ' + ASSET_TYPES[assetType]?.label)}`,
+        dim(`Total: ${fmtPrice(qty * cost)}  ·  ${sc('/portfolio')} to view holdings`),
+      ]);
+    } catch (e) {
+      hideLoading();
+      printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+    }
+  }
+
+  async function sellCmd(parts) {
+    if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+    if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+
+    // /sell AAPL 5 200.00
+    if (parts.length < 4) {
+      printLines([
+        `<span class="c-red">Usage:</span> /sell <SYMBOL> <QTY> <PRICE>`,
+        `${dim('Example:')} ${sc('/sell AAPL 5 200.00')}`,
+        '', dim('Sells shares and logs the transaction.'),
+        dim('If you sell all shares, the position is removed.'),
+      ]);
+      return;
+    }
+
+    const sym = parts[1].toUpperCase();
+    const qty = parseFloat(parts[2]);
+    const price = parseFloat(parts[3]);
+
+    if (isNaN(qty) || qty <= 0) { printLines([`<span class="c-red">Invalid qty:</span> ${parts[2]}`]); return; }
+    if (isNaN(price) || price < 0) { printLines([`<span class="c-red">Invalid price:</span> ${parts[3]}`]); return; }
+
+    showLoading(`Selling ${qty} ${sym}...`);
+    try {
+      await sellHolding(sym, qty, price);
+      hideLoading();
+      printLines([
+        `<span class="c-green">Sold ${qty} × ${sym} @ ${fmtPrice(price)}</span>`,
+        dim(`Proceeds: ${fmtPrice(qty * price)}  ·  ${sc('/portfolio')} to view  ·  ${sc('/history')} for trades`),
       ]);
     } catch (e) {
       hideLoading();
@@ -1218,34 +1194,15 @@
   }
 
   async function removeCmd(parts) {
-    if (!supabaseEnabled()) {
-      printLines([`<span class="c-red">Supabase not configured.</span>`]);
-      return;
-    }
-    if (!currentUser) {
-      printLines([`<span class="c-yellow">Sign in first.</span> Use ${sc('/login')}`]);
-      return;
-    }
-
-    if (parts.length < 2) {
-      printLines([
-        `<span class="c-red">Usage:</span> /remove <SYMBOL>`,
-        `${dim('Example:')} ${sc('/remove TSLA')}`,
-        '',
-        dim('Removes a ticker entirely from your portfolio.'),
-      ]);
-      return;
-    }
-
+    if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+    if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    if (parts.length < 2) { printLines([`<span class="c-red">Usage:</span> /remove <SYMBOL>`]); return; }
     const sym = parts[1].toUpperCase();
     showLoading(`Removing ${sym}...`);
     try {
       await removeHolding(sym);
       hideLoading();
-      printLines([
-        `<span class="c-green">Removed ${sym} from portfolio.</span>`,
-        dim(`Use ${sc('/portfolio')} to see your updated holdings.`),
-      ]);
+      printLines([`<span class="c-green">Removed ${sym}.</span> ${sc('/portfolio')}`]);
     } catch (e) {
       hideLoading();
       printLines([`<span class="c-red">Error:</span> ${e.message}`]);
@@ -1257,101 +1214,65 @@
   function runCommand(raw) {
     const trimmed = raw.trim();
     if (!trimmed) return;
-
     print(`<span class="cmd-echo">❯ ${trimmed}</span>`);
     printBlank();
-
     commandHistory.push(trimmed);
     historyIndex = commandHistory.length;
-
     const parts = trimmed.split(/\s+/);
     let cmd = parts[0].toLowerCase();
-
-    if (!cmd.startsWith('/') && commands['/' + cmd]) cmd = '/' + cmd;
     if (!cmd.startsWith('/')) cmd = '/' + cmd;
 
-    if (cmd === '/quote' || cmd === '/q' || cmd === '/price') {
-      quoteCmd(parts[1]);
-    } else if (cmd === '/chart' || cmd === '/c') {
-      chartCmd(parts[1]);
-    } else if (cmd === '/add') {
-      addCmd(parts);
-    } else if (cmd === '/remove' || cmd === '/rm') {
-      removeCmd(parts);
-    } else if (commands[cmd]) {
-      commands[cmd]();
-    } else {
-      printLines([
-        `<span class="c-red">unknown command:</span> ${trimmed}`,
-        `Type ${sc('/help')} to see available commands.`,
-      ]);
-    }
+    if (cmd === '/quote' || cmd === '/q' || cmd === '/price') quoteCmd(parts[1]);
+    else if (cmd === '/chart' || cmd === '/c') chartCmd(parts[1]);
+    else if (cmd === '/add' || cmd === '/buy') addCmd(parts);
+    else if (cmd === '/sell') sellCmd(parts);
+    else if (cmd === '/remove' || cmd === '/rm') removeCmd(parts);
+    else if (commands[cmd]) commands[cmd]();
+    else printLines([`<span class="c-red">unknown:</span> ${trimmed}`, `${sc('/help')} for commands`]);
   }
 
-  // ─── Input handling ───────────────────────────────────
+  // ─── Input ────────────────────────────────────────────
 
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      const val = input.value;
-      input.value = '';
-      runCommand(val);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (historyIndex > 0) { historyIndex--; input.value = commandHistory[historyIndex]; }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (historyIndex < commandHistory.length - 1) { historyIndex++; input.value = commandHistory[historyIndex]; }
-      else { historyIndex = commandHistory.length; input.value = ''; }
-    }
+    if (e.key === 'Enter') { const val = input.value; input.value = ''; runCommand(val); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (historyIndex > 0) { historyIndex--; input.value = commandHistory[historyIndex]; } }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); if (historyIndex < commandHistory.length - 1) { historyIndex++; input.value = commandHistory[historyIndex]; } else { historyIndex = commandHistory.length; input.value = ''; } }
   });
 
   document.addEventListener('click', (e) => {
-    if (!window.getSelection().toString() && !e.target.closest('a') && !e.target.closest('input') && !e.target.closest('button')) {
-      input.focus();
-    }
+    if (!window.getSelection().toString() && !e.target.closest('a') && !e.target.closest('input') && !e.target.closest('button')) input.focus();
   });
 
-  // ─── Clock ────────────────────────────────────────────
+  // ─── Clock & Market Status ────────────────────────────
 
   function updateClock() {
     const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    const s = String(now.getSeconds()).padStart(2, '0');
-    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+    document.getElementById('clock').textContent = [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
   }
   updateClock();
   setInterval(updateClock, 1000);
 
-  // ─── Market status ────────────────────────────────────
-
   function updateMarketStatus() {
-    const now = new Date();
-    const est = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    const day = est.getDay();
-    const time = est.getHours() * 60 + est.getMinutes();
+    const est = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const day = est.getDay(), time = est.getHours() * 60 + est.getMinutes();
     const el = document.getElementById('market-status');
-
     if (day >= 1 && day <= 5 && time >= 570 && time < 960) {
-      el.textContent = '● MARKET OPEN';
-      el.style.color = '#1a3a1a';
+      el.textContent = '● MARKET OPEN'; el.style.color = '#1a3a1a';
     } else {
-      el.textContent = '○ MARKET CLOSED';
-      el.style.color = '#3a1a1a';
+      el.textContent = '○ MARKET CLOSED'; el.style.color = '#3a1a1a';
     }
   }
   updateMarketStatus();
   setInterval(updateMarketStatus, 60000);
 
-  // ─── Ticker bar (live) ────────────────────────────────
+  // ─── Ticker Bar ───────────────────────────────────────
 
   const tickerSymbols = ['AAPL', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'AMD', 'BTC-USD', 'ETH-USD', '^GSPC', '^DJI'];
-  const tickerLabels  = { '^GSPC': 'S&P', '^DJI': 'DOW', 'BTC-USD': 'BTC', 'ETH-USD': 'ETH' };
+  const tickerLabels = { '^GSPC': 'S&P', '^DJI': 'DOW', 'BTC-USD': 'BTC', 'ETH-USD': 'ETH' };
 
   function renderTickerBar(data) {
     const tc = document.createElement('div');
     tc.className = 'ticker-content';
-
     for (let i = 0; i < 2; i++) {
       tickerSymbols.forEach(sym => {
         const q = data[sym];
@@ -1366,43 +1287,28 @@
         tc.appendChild(item);
       });
     }
-
     const bar = document.getElementById('ticker-bar');
     const old = bar.querySelector('.ticker-content');
     if (old) old.remove();
     bar.appendChild(tc);
   }
 
-  const mockTickers = [
-    { sym: 'AAPL', price: 189.84, change: 1.24 },
-    { sym: 'NVDA', price: 721.33, change: 3.87 },
-    { sym: 'MSFT', price: 415.20, change: 1.15 },
-    { sym: 'GOOGL', price: 152.87, change: 0.82 },
-    { sym: 'AMZN', price: 178.12, change: -0.31 },
-    { sym: 'TSLA', price: 231.45, change: -2.14 },
-    { sym: 'META', price: 501.33, change: 2.08 },
-    { sym: 'AMD', price: 168.90, change: -1.42 },
-    { sym: 'BTC-USD', price: 67843, change: 2.31 },
-    { sym: 'ETH-USD', price: 3521, change: 1.87 },
-    { sym: '^GSPC', price: 5842.31, change: 1.24 },
-    { sym: '^DJI', price: 43890, change: 0.87 },
-  ];
-
   const mockTickerData = {};
-  mockTickers.forEach(t => { mockTickerData[t.sym] = { price: t.price, change: t.change }; });
+  [
+    { sym: 'AAPL', price: 189.84, change: 1.24 }, { sym: 'NVDA', price: 721.33, change: 3.87 },
+    { sym: 'MSFT', price: 415.20, change: 1.15 }, { sym: 'GOOGL', price: 152.87, change: 0.82 },
+    { sym: 'AMZN', price: 178.12, change: -0.31 }, { sym: 'TSLA', price: 231.45, change: -2.14 },
+    { sym: 'META', price: 501.33, change: 2.08 }, { sym: 'AMD', price: 168.90, change: -1.42 },
+    { sym: 'BTC-USD', price: 67843, change: 2.31 }, { sym: 'ETH-USD', price: 3521, change: 1.87 },
+    { sym: '^GSPC', price: 5842.31, change: 1.24 }, { sym: '^DJI', price: 43890, change: 0.87 },
+  ].forEach(t => { mockTickerData[t.sym] = { price: t.price, change: t.change }; });
   renderTickerBar(mockTickerData);
 
   async function refreshTickerBar() {
-    try {
-      const data = await fetchQuotes(tickerSymbols);
-      renderTickerBar(data);
-    } catch (e) {
-      // Keep mock data
-    }
+    try { renderTickerBar(await fetchQuotes(tickerSymbols)); } catch (e) {}
   }
-
   refreshTickerBar();
-  setInterval(refreshTickerBar, 60000);
+  setInterval(refreshTickerBar, 30000);
 
   // ─── Boot ─────────────────────────────────────────────
   boot();
