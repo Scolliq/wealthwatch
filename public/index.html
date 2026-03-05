@@ -42,6 +42,47 @@
     </div>
   </main>
 
+  <!-- Portfolio Insights Dashboard -->
+  <section class="insights-panel" id="insights-panel">
+    <div class="insights-header">
+      <span class="insights-title">PORTFOLIO INSIGHTS</span>
+      <span class="insights-actions">
+        <button class="insights-refresh-btn" id="insights-refresh" title="Refresh">↻</button>
+        <button class="insights-toggle-btn" id="insights-toggle" title="Collapse">▼</button>
+      </span>
+    </div>
+    <div class="insights-body" id="insights-body">
+      <div class="insights-grid">
+        <!-- Row 1: Key metrics -->
+        <div class="insight-card" id="card-dividends">
+          <div class="insight-card-title">DIVIDENDS</div>
+          <div class="insight-card-body" id="insight-dividends">
+            <span class="c-dim">Loading...</span>
+          </div>
+        </div>
+        <div class="insight-card" id="card-rates">
+          <div class="insight-card-title">RATES &amp; RISK-FREE</div>
+          <div class="insight-card-body" id="insight-rates">
+            <span class="c-dim">Loading...</span>
+          </div>
+        </div>
+        <div class="insight-card" id="card-risk">
+          <div class="insight-card-title">RISK METRICS</div>
+          <div class="insight-card-body" id="insight-risk">
+            <span class="c-dim">Loading...</span>
+          </div>
+        </div>
+        <!-- Row 2: Correlation matrix -->
+        <div class="insight-card insight-card-wide" id="card-correlation">
+          <div class="insight-card-title">CORRELATION MATRIX</div>
+          <div class="insight-card-body" id="insight-correlation">
+            <span class="c-dim">Loading...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Bottom ticker bar -->
   <footer class="ticker-bar" id="ticker-bar">
     <div class="ticker-label">LIVE</div>

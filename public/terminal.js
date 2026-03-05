@@ -420,6 +420,370 @@
     if (error) throw error;
   }
 
+  // ─── Portfolio Insights Engine ───────────────────────────
+
+  async function fetchHistoricalData(symbols, range) {
+    const key = 'history:' + symbols.join(',') + ':' + range;
+    const cached = getCached(key);
+    if (cached) return cached;
+
+    const res = await fetch(`${API_BASE}?symbols=${symbols.join(',')}&type=history&range=${range || '6mo'}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    setCache(key, json.history || {});
+    return json.history || {};
+  }
+
+  async function fetchSummaryData(symbols) {
+    const key = 'summary:' + symbols.join(',');
+    const cached = getCached(key);
+    if (cached) return cached;
+
+    const res = await fetch(`${API_BASE}?symbols=${symbols.join(',')}&type=summary`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    setCache(key, json.summaries || {});
+    return json.summaries || {};
+  }
+
+  // Compute daily returns from close prices
+  function dailyReturns(closes) {
+    const returns = [];
+    for (let i = 1; i < closes.length; i++) {
+      if (closes[i] != null && closes[i - 1] != null && closes[i - 1] !== 0) {
+        returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+      } else {
+        returns.push(0);
+      }
+    }
+    return returns;
+  }
+
+  function mean(arr) {
+    if (!arr.length) return 0;
+    return arr.reduce((s, v) => s + v, 0) / arr.length;
+  }
+
+  function stddev(arr) {
+    const m = mean(arr);
+    const variance = arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1 || 1);
+    return Math.sqrt(variance);
+  }
+
+  function correlation(a, b) {
+    const n = Math.min(a.length, b.length);
+    if (n < 5) return 0;
+    const aSlice = a.slice(-n);
+    const bSlice = b.slice(-n);
+    const mA = mean(aSlice);
+    const mB = mean(bSlice);
+    let num = 0, dA = 0, dB = 0;
+    for (let i = 0; i < n; i++) {
+      const da = aSlice[i] - mA;
+      const db = bSlice[i] - mB;
+      num += da * db;
+      dA += da * da;
+      dB += db * db;
+    }
+    const denom = Math.sqrt(dA * dB);
+    return denom === 0 ? 0 : num / denom;
+  }
+
+  function beta(assetReturns, benchmarkReturns) {
+    const n = Math.min(assetReturns.length, benchmarkReturns.length);
+    if (n < 5) return 1;
+    const a = assetReturns.slice(-n);
+    const b = benchmarkReturns.slice(-n);
+    const mA = mean(a);
+    const mB = mean(b);
+    let cov = 0, varB = 0;
+    for (let i = 0; i < n; i++) {
+      const da = a[i] - mA;
+      const db = b[i] - mB;
+      cov += da * db;
+      varB += db * db;
+    }
+    return varB === 0 ? 1 : cov / varB;
+  }
+
+  function corrClass(val) {
+    if (Math.abs(val) > 0.99) return 'corr-self';
+    if (val >= 0.6) return 'corr-high-pos';
+    if (val >= 0.3) return 'corr-mid-pos';
+    if (val >= -0.3) return 'corr-low';
+    return 'corr-neg';
+  }
+
+  async function getInsightsHoldings() {
+    if (sb && currentUser) {
+      try {
+        const dbHoldings = await getHoldings();
+        if (dbHoldings && dbHoldings.length > 0) {
+          return dbHoldings.map(h => ({ sym: h.symbol, qty: h.qty, avgCost: h.avg_cost }));
+        }
+      } catch (e) {}
+    }
+    // Demo fallback
+    return [
+      { sym: 'AAPL',    qty: 50,  avgCost: 171.20 },
+      { sym: 'NVDA',    qty: 25,  avgCost: 480.50 },
+      { sym: 'TSLA',    qty: 10,  avgCost: 248.90 },
+      { sym: 'BTC-USD', qty: 0.5, avgCost: 42100  },
+    ];
+  }
+
+  async function refreshInsights() {
+    const panel = document.getElementById('insights-panel');
+    if (!panel || panel.classList.contains('collapsed')) return;
+
+    const divEl = document.getElementById('insight-dividends');
+    const ratesEl = document.getElementById('insight-rates');
+    const riskEl = document.getElementById('insight-risk');
+    const corrEl = document.getElementById('insight-correlation');
+
+    // Show loading state
+    [divEl, ratesEl, riskEl, corrEl].forEach(el => {
+      if (el) el.innerHTML = '<span class="c-dim loading-dots">Loading</span>';
+    });
+
+    try {
+      const holdings = await getInsightsHoldings();
+      const holdingSymbols = holdings.map(h => h.sym);
+
+      // Fetch all data in parallel
+      // SPY for benchmark, ^IRX for 13-week T-bill (risk-free), ^TNX for 10-year treasury
+      const allSymbols = [...new Set([...holdingSymbols, 'SPY', '^IRX', '^TNX'])];
+      const [history, summaries, quotes] = await Promise.all([
+        fetchHistoricalData(allSymbols, '6mo'),
+        fetchSummaryData(holdingSymbols),
+        fetchQuotes(holdingSymbols),
+      ]);
+
+      // ── Risk-free rate & interest rates ──
+      const riskFreeRate = history['^IRX']?.closes?.filter(v => v != null).pop() || 4.5;
+      const tenYearRate = history['^TNX']?.closes?.filter(v => v != null).pop() || 4.2;
+      const riskFreeDaily = riskFreeRate / 100 / 252;
+
+      let ratesHtml = '';
+      ratesHtml += `<div class="insight-row"><span class="insight-label">Risk-Free (13W T-Bill)</span><span class="insight-value">${riskFreeRate.toFixed(2)}%</span></div>`;
+      ratesHtml += `<div class="insight-row"><span class="insight-label">10Y Treasury</span><span class="insight-value">${tenYearRate.toFixed(2)}%</span></div>`;
+      ratesHtml += `<div class="insight-row"><span class="insight-label">Spread (10Y-3M)</span>`;
+      const spread = tenYearRate - riskFreeRate;
+      const spreadCls = spread >= 0 ? 'positive' : 'negative';
+      ratesHtml += `<span class="insight-value ${spreadCls}">${spread >= 0 ? '+' : ''}${spread.toFixed(2)}%</span></div>`;
+      if (ratesEl) ratesEl.innerHTML = ratesHtml;
+
+      // ── Dividends ──
+      let totalDivIncome = 0;
+      let nextExDate = null;
+      let nextExSymbol = '';
+      let divRows = '';
+      const now = Date.now() / 1000;
+
+      holdings.forEach(h => {
+        const s = summaries[h.sym];
+        const q = quotes[h.sym];
+        const price = q?.price || s?.price || 0;
+        const divRate = s?.trailingAnnualDividendRate || 0;
+        const divYield = s?.trailingAnnualDividendYield || 0;
+        const annualDiv = divRate * h.qty;
+        totalDivIncome += annualDiv;
+
+        if (s?.exDividendDate && s.exDividendDate > now) {
+          if (!nextExDate || s.exDividendDate < nextExDate) {
+            nextExDate = s.exDividendDate;
+            nextExSymbol = h.sym;
+          }
+        }
+
+        if (divRate > 0) {
+          divRows += `<div class="insight-row"><span class="insight-label">${h.sym}</span><span class="insight-value">$${divRate.toFixed(2)}/sh (${(divYield * 100).toFixed(2)}%)</span></div>`;
+        }
+      });
+
+      let divHtml = '';
+      divHtml += `<div class="insight-row"><span class="insight-label">Annual Income</span><span class="insight-value-lg">$${totalDivIncome.toFixed(2)}</span></div>`;
+      divHtml += `<div class="insight-row"><span class="insight-label">Monthly (est.)</span><span class="insight-value">$${(totalDivIncome / 12).toFixed(2)}</span></div>`;
+      if (nextExDate) {
+        const exDate = new Date(nextExDate * 1000);
+        divHtml += `<div class="insight-row"><span class="insight-label">Next Ex-Date</span><span class="insight-value c-yellow">${nextExSymbol} ${exDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></div>`;
+      } else {
+        divHtml += `<div class="insight-row"><span class="insight-label">Next Ex-Date</span><span class="insight-value c-dim">--</span></div>`;
+      }
+      if (divRows) {
+        divHtml += `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px">${divRows}</div>`;
+      }
+      if (totalDivIncome === 0) {
+        divHtml += `<div class="insight-sub" style="margin-top:4px">No dividend-paying holdings</div>`;
+      }
+      if (divEl) divEl.innerHTML = divHtml;
+
+      // ── Calculate returns for each holding ──
+      const returnsMap = {};
+      allSymbols.forEach(sym => {
+        if (history[sym]?.closes) {
+          const closes = history[sym].closes.filter(v => v != null);
+          returnsMap[sym] = dailyReturns(closes);
+        }
+      });
+
+      const spyReturns = returnsMap['SPY'] || [];
+
+      // ── Portfolio-level metrics ──
+      // Weight each holding by market value
+      let totalValue = 0;
+      const positionValues = holdings.map(h => {
+        const q = quotes[h.sym];
+        const price = q?.price || summaries[h.sym]?.price || 0;
+        const val = price * h.qty;
+        totalValue += val;
+        return { sym: h.sym, value: val };
+      });
+
+      const weights = positionValues.map(p => totalValue > 0 ? p.value / totalValue : 1 / holdings.length);
+
+      // Portfolio daily returns (weighted sum)
+      const minLen = Math.min(
+        ...holdingSymbols.map(s => (returnsMap[s]?.length || 0)),
+        spyReturns.length || Infinity
+      );
+
+      let portfolioReturns = [];
+      if (minLen > 5) {
+        for (let i = 0; i < minLen; i++) {
+          let portRet = 0;
+          holdingSymbols.forEach((sym, j) => {
+            const r = returnsMap[sym];
+            if (r && r.length >= minLen) {
+              portRet += weights[j] * r[r.length - minLen + i];
+            }
+          });
+          portfolioReturns.push(portRet);
+        }
+      }
+
+      // Portfolio beta
+      const portBeta = portfolioReturns.length > 5 && spyReturns.length > 5
+        ? beta(portfolioReturns, spyReturns.slice(-portfolioReturns.length))
+        : null;
+
+      // Sharpe ratio (annualized)
+      const portMeanReturn = mean(portfolioReturns);
+      const portStd = stddev(portfolioReturns);
+      const sharpe = portStd > 0
+        ? ((portMeanReturn - riskFreeDaily) / portStd) * Math.sqrt(252)
+        : 0;
+
+      // Sortino ratio (downside deviation only)
+      const downsideReturns = portfolioReturns.filter(r => r < riskFreeDaily).map(r => r - riskFreeDaily);
+      const downsideDev = downsideReturns.length > 0 ? Math.sqrt(downsideReturns.reduce((s, v) => s + v * v, 0) / downsideReturns.length) : 0;
+      const sortino = downsideDev > 0
+        ? ((portMeanReturn - riskFreeDaily) / downsideDev) * Math.sqrt(252)
+        : 0;
+
+      // Portfolio volatility (annualized)
+      const portVol = portStd * Math.sqrt(252) * 100;
+
+      // Individual betas
+      const holdingBetas = holdingSymbols.map(sym => {
+        const r = returnsMap[sym];
+        return r && r.length > 5 && spyReturns.length > 5
+          ? beta(r, spyReturns.slice(-r.length))
+          : null;
+      });
+
+      // ── Risk metrics card ──
+      let riskHtml = '';
+      if (portBeta != null) {
+        riskHtml += `<div class="insight-row"><span class="insight-label">Portfolio Beta</span><span class="insight-value-lg">${portBeta.toFixed(2)}</span></div>`;
+      }
+      const sharpeCls = sharpe >= 1 ? 'positive' : sharpe >= 0 ? 'c-yellow' : 'negative';
+      riskHtml += `<div class="insight-row"><span class="insight-label">Sharpe Ratio</span><span class="insight-value ${sharpeCls}">${sharpe.toFixed(2)}</span></div>`;
+      riskHtml += `<div class="insight-row"><span class="insight-label">Sortino Ratio</span><span class="insight-value ${sharpeCls}">${sortino.toFixed(2)}</span></div>`;
+      riskHtml += `<div class="insight-row"><span class="insight-label">Volatility (ann.)</span><span class="insight-value">${portVol.toFixed(1)}%</span></div>`;
+
+      // Individual beta bars
+      riskHtml += `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">`;
+      holdingSymbols.forEach((sym, i) => {
+        const b = holdingBetas[i];
+        if (b == null) return;
+        const absB = Math.abs(b);
+        const pct = Math.min(absB / 2.5 * 100, 100);
+        const color = absB > 1.5 ? 'var(--red)' : absB > 1 ? 'var(--yellow)' : 'var(--green)';
+        riskHtml += `<div class="beta-bar-container">
+          <span class="beta-bar-label">${sym}</span>
+          <div class="beta-bar-track"><div class="beta-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+          <span class="beta-bar-value" style="color:${color}">${b.toFixed(2)}</span>
+        </div>`;
+      });
+      riskHtml += '</div>';
+      if (riskEl) riskEl.innerHTML = riskHtml;
+
+      // ── Correlation matrix ──
+      const corrSymbols = holdingSymbols.filter(s => returnsMap[s]?.length > 5);
+      if (corrSymbols.length >= 2) {
+        let corrHtml = '<table class="corr-table"><thead><tr><th></th>';
+        corrSymbols.forEach(s => { corrHtml += `<th>${s.replace('-USD', '')}</th>`; });
+        corrHtml += '</tr></thead><tbody>';
+
+        corrSymbols.forEach((rowSym, ri) => {
+          corrHtml += `<tr><td class="corr-row-label">${rowSym.replace('-USD', '')}</td>`;
+          corrSymbols.forEach((colSym, ci) => {
+            if (ri === ci) {
+              corrHtml += '<td class="corr-self">1.00</td>';
+            } else {
+              const c = correlation(returnsMap[rowSym], returnsMap[colSym]);
+              corrHtml += `<td class="${corrClass(c)}">${c.toFixed(2)}</td>`;
+            }
+          });
+          corrHtml += '</tr>';
+        });
+
+        corrHtml += '</tbody></table>';
+        if (corrEl) corrEl.innerHTML = corrHtml;
+      } else {
+        if (corrEl) corrEl.innerHTML = '<span class="c-dim">Need 2+ holdings with price history</span>';
+      }
+
+    } catch (e) {
+      console.error('Insights error:', e);
+      [divEl, ratesEl, riskEl, corrEl].forEach(el => {
+        if (el && el.innerHTML.includes('Loading')) {
+          el.innerHTML = '<span class="c-dim">Data unavailable</span>';
+        }
+      });
+    }
+  }
+
+  // Insights panel controls
+  function initInsightsPanel() {
+    const panel = document.getElementById('insights-panel');
+    const toggle = document.getElementById('insights-toggle');
+    const refresh = document.getElementById('insights-refresh');
+
+    if (!panel) return;
+
+    toggle?.addEventListener('click', () => {
+      panel.classList.toggle('collapsed');
+      if (!panel.classList.contains('collapsed')) {
+        refreshInsights();
+      }
+    });
+
+    refresh?.addEventListener('click', () => {
+      // Clear cache for insights data
+      Object.keys(cache).forEach(k => {
+        if (k.startsWith('history:') || k.startsWith('summary:')) delete cache[k];
+      });
+      refreshInsights();
+    });
+
+    // Initial load
+    refreshInsights();
+    // Auto-refresh every 5 minutes
+    setInterval(refreshInsights, 300000);
+  }
+
   // ─── Boot ─────────────────────────────────────────────
 
   const isMobile = window.innerWidth <= 480;
@@ -445,6 +809,7 @@
     print(`    ${sc('/market')}        ${dim('Market overview & indices')}`);
     print(`    ${sc('/portfolio')}     ${dim('Portfolio positions & P/L')}`);
     print(`    ${sc('/analytics')}     ${dim('Portfolio analytics & allocation')}`);
+    print(`    ${sc('/insights')}      ${dim('Toggle insights dashboard')}`);
     print(`    ${sc('/quote')} ${dim('<SYM>')}   ${dim('Real-time stock quote')}`);
     print(`    ${sc('/chart')} ${dim('<SYM>')}   ${dim('Interactive price chart (30d)')}`);
     print(`    ${sc('/watchlist')}     ${dim('Tracked tickers')}`);
@@ -496,6 +861,7 @@
         `  ${sc('/market')}                  ${dim('Live market indices & crypto')}`,
         `  ${sc('/portfolio')}               ${dim('Portfolio positions & P/L')}`,
         `  ${sc('/analytics')}               ${dim('Portfolio analytics & charts')}`,
+        `  ${sc('/insights')}                ${dim('Toggle insights dashboard')}`,
         `  ${sc('/quote')} ${dim('<ticker>')}          ${dim('Real-time stock quote')}`,
         `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('Interactive price chart (30d)')}`,
         `  ${sc('/watchlist')}               ${dim('Tracked tickers with sparklines')}`,
@@ -1016,6 +1382,30 @@
       ]);
     },
 
+    '/insights': function() {
+      const panel = document.getElementById('insights-panel');
+      if (!panel) {
+        printLines([`<span class="c-red">Insights panel not found</span>`]);
+        return;
+      }
+      const wasCollapsed = panel.classList.contains('collapsed');
+      panel.classList.toggle('collapsed');
+      if (wasCollapsed) {
+        // Clear cache and refresh
+        Object.keys(cache).forEach(k => {
+          if (k.startsWith('history:') || k.startsWith('summary:')) delete cache[k];
+        });
+        refreshInsights();
+        printLines([
+          `<span class="c-green">Insights panel opened</span>`,
+          dim('Showing dividends, rates, beta, Sharpe ratio, correlation matrix'),
+          dim('Data refreshes every 5 minutes. Click ↻ to refresh manually.'),
+        ]);
+      } else {
+        printLines([`<span class="c-dim">Insights panel collapsed</span>`]);
+      }
+    },
+
     '/clear': function() {
       output.innerHTML = '';
     },
@@ -1211,6 +1601,9 @@
         `<span class="c-green">Added ${qty} shares of ${sym} at ${fmtPrice(cost)}</span>`,
         dim(`Use ${sc('/portfolio')} to see your updated holdings.`),
       ]);
+      // Refresh insights panel
+      Object.keys(cache).forEach(k => { if (k.startsWith('history:') || k.startsWith('summary:')) delete cache[k]; });
+      refreshInsights();
     } catch (e) {
       hideLoading();
       printLines([`<span class="c-red">Error:</span> ${e.message}`]);
@@ -1246,6 +1639,9 @@
         `<span class="c-green">Removed ${sym} from portfolio.</span>`,
         dim(`Use ${sc('/portfolio')} to see your updated holdings.`),
       ]);
+      // Refresh insights panel
+      Object.keys(cache).forEach(k => { if (k.startsWith('history:') || k.startsWith('summary:')) delete cache[k]; });
+      refreshInsights();
     } catch (e) {
       hideLoading();
       printLines([`<span class="c-red">Error:</span> ${e.message}`]);
@@ -1406,5 +1802,6 @@
 
   // ─── Boot ─────────────────────────────────────────────
   boot();
+  initInsightsPanel();
 
 })();
