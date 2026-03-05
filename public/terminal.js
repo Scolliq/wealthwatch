@@ -373,25 +373,50 @@
 
   // ─── Supabase helpers ──────────────────────────────────
 
+  function isSchemaError(error) {
+    return error && (
+      (error.message && error.message.includes('schema cache')) ||
+      (error.code === '42P01') || // relation does not exist
+      (error.message && error.message.includes('relation') && error.message.includes('does not exist'))
+    );
+  }
+
+  function schemaErrorMsg() {
+    return 'Database table not found. Run supabase-schema.sql in your Supabase SQL Editor to create the holdings table.';
+  }
+
   async function getHoldings() {
     if (!sb || !currentUser) return null;
     const { data, error } = await sb
       .from('holdings')
       .select('*')
       .order('added_at', { ascending: true });
-    if (error) throw error;
+    if (error) {
+      if (isSchemaError(error)) {
+        const e = new Error(schemaErrorMsg());
+        e.isSchemaError = true;
+        throw e;
+      }
+      throw error;
+    }
     return data;
   }
 
   async function addHolding(symbol, qty, avgCost) {
     if (!sb || !currentUser) throw new Error('Not logged in');
     // Upsert — if symbol exists, update qty and avg cost
-    const { data: existing } = await sb
+    const { data: existing, error: selectError } = await sb
       .from('holdings')
       .select('*')
       .eq('user_id', currentUser.id)
       .eq('symbol', symbol)
       .single();
+
+    if (selectError && selectError.code !== 'PGRST116') {
+      // PGRST116 = "no rows returned" which is fine (new holding)
+      if (isSchemaError(selectError)) throw new Error(schemaErrorMsg());
+      throw selectError;
+    }
 
     if (existing) {
       // Weighted average
@@ -401,12 +426,18 @@
         .from('holdings')
         .update({ qty: totalQty, avg_cost: newAvg })
         .eq('id', existing.id);
-      if (error) throw error;
+      if (error) {
+        if (isSchemaError(error)) throw new Error(schemaErrorMsg());
+        throw error;
+      }
     } else {
       const { error } = await sb
         .from('holdings')
         .insert({ user_id: currentUser.id, symbol, qty, avg_cost: avgCost });
-      if (error) throw error;
+      if (error) {
+        if (isSchemaError(error)) throw new Error(schemaErrorMsg());
+        throw error;
+      }
     }
   }
 
@@ -417,7 +448,10 @@
       .delete()
       .eq('user_id', currentUser.id)
       .eq('symbol', symbol);
-    if (error) throw error;
+    if (error) {
+      if (isSchemaError(error)) throw new Error(schemaErrorMsg());
+      throw error;
+    }
   }
 
   // ─── Portfolio Insights Engine ───────────────────────────
@@ -940,6 +974,7 @@
       let isUserPortfolio = false;
 
       // Try Supabase first
+      let schemaIssue = false;
       if (sb && currentUser) {
         try {
           const dbHoldings = await getHoldings();
@@ -948,6 +983,7 @@
             isUserPortfolio = true;
           }
         } catch (e) {
+          if (e.isSchemaError) schemaIssue = true;
           // Fall through to demo
         }
       }
@@ -1011,7 +1047,10 @@
       printBlank();
 
       if (!isUserPortfolio && supabaseEnabled()) {
-        if (!currentUser) {
+        if (schemaIssue) {
+          print(`<span class="c-yellow">⚠ Database table not found.</span> ${dim('Run supabase-schema.sql in your Supabase SQL Editor.')}`);
+          print(dim('Showing demo portfolio below.'));
+        } else if (!currentUser) {
           print(dim(`Demo portfolio shown. ${sc('/login')} or ${sc('/signup')} to track your own.`));
         } else {
           print(dim(`No holdings found. Use ${sc('/add')} AAPL 10 150.00 to add stocks.`));
@@ -1606,7 +1645,15 @@
       refreshInsights();
     } catch (e) {
       hideLoading();
-      printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+      if (isSchemaError(e) || e.message.includes('schema')) {
+        printLines([
+          `<span class="c-yellow">⚠ Database table not found.</span>`,
+          dim('The holdings table has not been created yet.'),
+          dim('Run the SQL from supabase-schema.sql in your Supabase SQL Editor.'),
+        ]);
+      } else {
+        printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+      }
     }
   }
 
