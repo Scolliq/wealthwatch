@@ -409,6 +409,28 @@
     return data || [];
   }
 
+  async function getWatchlist() {
+    if (!sb || !currentUser) return null;
+    const { data, error } = await sb.from('watchlist').select('*').eq('user_id', currentUser.id).order('added_at');
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function addToWatchlist(symbol, price) {
+    if (!sb || !currentUser) throw new Error('Not logged in');
+    const assetType = detectAssetType(symbol);
+    const { error } = await sb.from('watchlist').insert({
+      user_id: currentUser.id, symbol, asset_type: assetType, added_price: price,
+    });
+    if (error) throw error;
+  }
+
+  async function removeFromWatchlist(symbol) {
+    if (!sb || !currentUser) throw new Error('Not logged in');
+    const { error } = await sb.from('watchlist').delete().eq('user_id', currentUser.id).eq('symbol', symbol);
+    if (error) throw error;
+  }
+
   // ─── Live Price Poller (5s) ──────────────────────────
 
   let livePortfolioSymbols = [];
@@ -460,7 +482,9 @@
     print(`    ${sc('/market')}        ${dim('Market overview & indices')}`);
     print(`    ${sc('/quote')} ${dim('<SYM>')}   ${dim('Real-time stock quote')}`);
     print(`    ${sc('/chart')} ${dim('<SYM>')}   ${dim('Interactive price chart (30d)')}`);
-    print(`    ${sc('/watchlist')}     ${dim('Tracked tickers')}`);
+    print(`    ${sc('/watchlist')}     ${dim('Watchlist with P/L since added')}`);
+    print(`    ${sc('/watch')} ${dim('<SYM>')}   ${dim('Add ticker to watchlist (saves price)')}`);
+    print(`    ${sc('/unwatch')} ${dim('<SYM>')} ${dim('Remove ticker from watchlist')}`);
     print(`    ${sc('/news')}          ${dim('Financial headlines')}`);
     printBlank();
 
@@ -497,7 +521,9 @@
         `  ${sc('/market')}                  ${dim('Live indices & crypto')}`,
         `  ${sc('/quote')} ${dim('<ticker>')}          ${dim('Real-time quote')}`,
         `  ${sc('/chart')} ${dim('<ticker>')}          ${dim('Interactive 30d chart')}`,
-        `  ${sc('/watchlist')}               ${dim('Tracked tickers')}`,
+        `  ${sc('/watchlist')}               ${dim('Watchlist with P/L since added')}`,
+        `  ${sc('/watch')} ${dim('<ticker>')}           ${dim('Add to watchlist (saves price)')}`,
+        `  ${sc('/unwatch')} ${dim('<ticker>')}         ${dim('Remove from watchlist')}`,
         `  ${sc('/alerts')}                  ${dim('Price alerts')}`,
         `  ${sc('/news')}                    ${dim('Headlines')}`,
         '',
@@ -852,32 +878,113 @@
     '/watchlist': async function() {
       showLoading('Fetching watchlist...');
       try {
+        const items = await getWatchlist();
+        if (items === null) throw new Error('not logged in');
+
+        if (items.length === 0) {
+          hideLoading();
+          printLines([
+            dim('Your watchlist is empty.'),
+            `Use ${sc('/watch')} ${dim('<ticker>')} to add any stock, ETF, or commodity.`,
+          ]);
+          printBlank();
+          bindSlashCommands();
+          scrollToBottom();
+          return;
+        }
+
+        const syms = items.map(i => i.symbol);
         const [quotes, ...charts] = await Promise.all([
-          fetchQuotes(watchlistSymbols),
-          ...watchlistSymbols.map(s => fetchChartData(s).catch(() => null)),
+          fetchQuotes(syms),
+          ...syms.map(s => fetchChartData(s).catch(() => null)),
         ]);
         hideLoading();
-        const rows = watchlistSymbols.map((sym, i) => {
-          const q = quotes[sym];
+
+        const rows = items.map((item, i) => {
+          const q = quotes[item.symbol];
           const chart = charts[i];
           const spark = chart ? sparkline(chart.closes) : dim('—');
-          if (!q) return [tn(sym), dim('—'), dim('—'), spark];
-          return [tn(sym), fmtPrice(q.price), fmtChange(q.change), spark];
+          if (!q) return [tn(item.symbol), dim('—'), dim('—'), dim('—'), dim('—'), spark];
+
+          const addedPrice = item.added_price;
+          const pl = addedPrice ? ((q.price - addedPrice) / addedPrice) * 100 : null;
+          const plCell = pl != null ? fmtChange(pl) : dim('—');
+          const addedCell = addedPrice ? fmtPrice(addedPrice) : dim('—');
+
+          return [tn(item.symbol), addedCell, fmtPrice(q.price), fmtChange(q.change), plCell, spark];
         });
-        printRaw(panel('Watchlist', table(['Ticker', 'Price', 'Change', '30d'], rows), 'LIVE'));
+
+        printRaw(panel('Watchlist', table(['Ticker', 'Added At', 'Price', 'Day', 'Since Added', '30d'], rows), 'LIVE'));
       } catch (e) {
         hideLoading();
         const rows = [
-          [tn('MSFT'), '$415.20', fmtChange(1.20), dim('▁▂▃▄▅▆▇█▇▆▅▆▇█')],
-          [tn('GOOGL'), '$152.87', fmtChange(0.82), dim('▃▄▅▄▃▄▅▆▇▆▅▆▇▆')],
-          [tn('AMZN'), '$178.12', fmtChange(-0.31), dim('▆▇▆▅▄▃▂▃▄▅▄▃▂▃')],
-          [tn('META'), '$501.33', fmtChange(2.08), dim('▂▃▄▅▆▇█▇▆▇████')],
-          [tn('AMD'), '$168.90', fmtChange(-1.42), dim('█▇▆▅▄▃▂▃▄▃▂▁▂▃')],
+          [tn('MSFT'), '$415.20', '$430.10', fmtChange(1.20), fmtChange(3.59), dim('▁▂▃▄▅▆▇█▇▆▅▆▇█')],
+          [tn('GOOGL'), '$152.87', '$161.44', fmtChange(0.82), fmtChange(5.60), dim('▃▄▅▄▃▄▅▆▇▆▅▆▇▆')],
+          [tn('META'), '$501.33', '$489.20', fmtChange(2.08), fmtChange(-2.42), dim('▂▃▄▅▆▇█▇▆▇████')],
         ];
-        printRaw(panel('Watchlist', table(['Ticker', 'Price', 'Change', '30d'], rows), 'DEMO'));
+        printRaw(panel('Watchlist', table(['Ticker', 'Added At', 'Price', 'Day', 'Since Added', '30d'], rows), 'DEMO'));
       }
       printBlank();
-      print(dim(`${sc('/quote')} <ticker> for details`));
+      print(dim(`${sc('/watch')} <ticker> to add  ·  ${sc('/unwatch')} <ticker> to remove`));
+      printBlank();
+      bindSlashCommands();
+      scrollToBottom();
+    },
+
+    '/watch': async function(args) {
+      const sym = (args[0] || '').toUpperCase();
+      if (!sym) {
+        printLines([`Usage: ${sc('/watch')} ${dim('<ticker>')}`]);
+        bindSlashCommands();
+        return;
+      }
+      if (!currentUser) {
+        printLines([`<span class="c-red">Login required.</span> Use ${sc('/login')} first.`]);
+        bindSlashCommands();
+        return;
+      }
+      showLoading(`Looking up ${sym}...`);
+      try {
+        const quotes = await fetchQuotes([sym]);
+        const q = quotes[sym];
+        if (!q || !q.price) throw new Error(`Could not find ticker ${sym}`);
+        hideLoading();
+        await addToWatchlist(sym, q.price);
+        printLines([
+          `<span class="c-green">Added ${sym} to watchlist</span> at ${fmtPrice(q.price)}`,
+          dim(`P/L vs this price will be tracked going forward.`),
+        ]);
+      } catch (e) {
+        hideLoading();
+        if (e.message.includes('duplicate') || e.code === '23505') {
+          printLines([`${sym} is already on your watchlist.`]);
+        } else {
+          printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+        }
+      }
+      printBlank();
+      bindSlashCommands();
+      scrollToBottom();
+    },
+
+    '/unwatch': async function(args) {
+      const sym = (args[0] || '').toUpperCase();
+      if (!sym) {
+        printLines([`Usage: ${sc('/unwatch')} ${dim('<ticker>')}`]);
+        bindSlashCommands();
+        return;
+      }
+      if (!currentUser) {
+        printLines([`<span class="c-red">Login required.</span> Use ${sc('/login')} first.`]);
+        bindSlashCommands();
+        return;
+      }
+      try {
+        await removeFromWatchlist(sym);
+        printLines([`Removed ${tn(sym)} from watchlist.`]);
+      } catch (e) {
+        printLines([`<span class="c-red">Error:</span> ${e.message}`]);
+      }
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -1227,6 +1334,8 @@
     else if (cmd === '/add' || cmd === '/buy') addCmd(parts);
     else if (cmd === '/sell') sellCmd(parts);
     else if (cmd === '/remove' || cmd === '/rm') removeCmd(parts);
+    else if (cmd === '/watch') commands['/watch'](parts.slice(1));
+    else if (cmd === '/unwatch') commands['/unwatch'](parts.slice(1));
     else if (commands[cmd]) commands[cmd]();
     else printLines([`<span class="c-red">unknown:</span> ${trimmed}`, `${sc('/help')} for commands`]);
   }

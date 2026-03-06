@@ -107,9 +107,17 @@ create table if not exists watchlist (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users(id) on delete cascade not null,
   symbol text not null,
+  asset_type text not null default 'equity'
+    check (asset_type in ('equity', 'bond', 'commodity', 'crypto', 'etf')),
+  added_price numeric,
   added_at timestamptz default now(),
   unique(user_id, symbol)
 );
+
+-- Migration: add columns if table already exists
+alter table watchlist add column if not exists asset_type text not null default 'equity'
+  check (asset_type in ('equity', 'bond', 'commodity', 'crypto', 'etf'));
+alter table watchlist add column if not exists added_price numeric;
 
 alter table watchlist enable row level security;
 
