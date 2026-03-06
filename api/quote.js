@@ -46,6 +46,18 @@ module.exports = async (req, res) => {
     // Default: quote data for multiple symbols
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`;
     const data = await yahooFetch(url);
+
+    // Fix regularMarketChangePercent if Yahoo returns 0 but we have price + prevClose
+    const results = data.quoteResponse?.result;
+    if (Array.isArray(results)) {
+      results.forEach(q => {
+        if (!q.regularMarketChangePercent && q.regularMarketPrice && q.regularMarketPreviousClose) {
+          q.regularMarketChangePercent =
+            ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
+        }
+      });
+    }
+
     return res.json(data);
 
   } catch (err) {
