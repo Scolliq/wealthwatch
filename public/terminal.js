@@ -812,6 +812,84 @@
         ]);
         printRaw(panel("Today's Movers", table(['Ticker', 'Type', 'Value', 'Day %', 'Day P/L'], moverRows), 'BY DAY CHANGE'));
 
+        // Value at Risk — Historical Simulation
+        try {
+          const chartResults = await Promise.allSettled(holdings.map(h => fetchChartData(h.sym)));
+
+          // Build daily return series for each position that has chart data
+          const posReturns = [];
+          chartResults.forEach((r, idx) => {
+            if (r.status !== 'fulfilled') return;
+            const closes = r.value.closes;
+            if (closes.length < 3) return;
+            const returns = [];
+            for (let i = 1; i < closes.length; i++) {
+              if (!closes[i] || !closes[i - 1]) continue;
+              returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+            }
+            if (returns.length < 3) return;
+            posReturns.push({ returns, weight: positions[idx].value / totalValue });
+          });
+
+          if (posReturns.length >= 2) {
+            // Align to the shortest return series, using most-recent observations
+            const minLen = Math.min(...posReturns.map(p => p.returns.length));
+
+            // Compute portfolio-weighted daily returns for each day
+            const portReturns = [];
+            for (let i = 0; i < minLen; i++) {
+              const offset = i + (posReturns[0].returns.length - minLen); // align to recent
+              const dayRet = posReturns.reduce((s, p) => {
+                const idx2 = i + (p.returns.length - minLen);
+                return s + p.weight * p.returns[idx2];
+              }, 0);
+              portReturns.push(dayRet);
+            }
+
+            portReturns.sort((a, b) => a - b);
+            const n = portReturns.length;
+
+            // Historical VaR: find the loss at the given percentile
+            const idx95 = Math.min(n - 1, Math.max(0, Math.floor(n * 0.05)));
+            const idx99 = Math.min(n - 1, Math.max(0, Math.floor(n * 0.01)));
+
+            const var95Ret = -portReturns[idx95];  // positive = expected loss
+            const var99Ret = -portReturns[idx99];
+            const var95    = var95Ret * totalValue;
+            const var99    = var99Ret * totalValue;
+
+            // 10-day VaR via square-root-of-time rule
+            const var95_10d = var95 * Math.sqrt(10);
+            const var99_10d = var99 * Math.sqrt(10);
+
+            // Expected Shortfall (CVaR) at 95%: average of losses beyond VaR
+            const tailSlice = portReturns.slice(0, idx95 + 1);
+            const cvarRet = tailSlice.length > 0
+              ? -(tailSlice.reduce((s, r) => s + r, 0) / tailSlice.length)
+              : var95Ret;
+            const cvar95 = cvarRet * totalValue;
+
+            const worstRet = portReturns[0];
+            const bestRet  = portReturns[n - 1];
+
+            const varRows = [
+              ['1-Day VaR (95%)',  fmtPL(-var95),       fmtChange(-var95Ret * 100)],
+              ['1-Day VaR (99%)',  fmtPL(-var99),       fmtChange(-var99Ret * 100)],
+              ['10-Day VaR (95%)', fmtPL(-var95_10d),   fmtChange(-var95Ret * Math.sqrt(10) * 100)],
+              ['CVaR / ES (95%)',  fmtPL(-cvar95),      fmtChange(-cvarRet * 100)],
+              ['Worst Day (30d)',  fmtPL(worstRet * totalValue), fmtChange(worstRet * 100)],
+              ['Best Day (30d)',   fmtPL(bestRet * totalValue),  fmtChange(bestRet * 100)],
+            ];
+
+            const varNote = dim(`Historical simulation · ${n} trading days · Square-root-of-time for 10d · Assumes static weights`);
+            printRaw(panel('Value at Risk (VaR)',
+              table(['Metric', 'Dollar Impact', 'Return'], varRows) +
+              `<div style="padding:6px 0 2px;font-size:11px">${varNote}</div>`,
+              'HISTORICAL · 30D'
+            ));
+          }
+        } catch (_) { /* VaR is supplementary — fail silently */ }
+
       } catch (e) {
         hideLoading();
         printLines([`<span class="c-red">Failed to load analytics.</span> ${dim('Try again later.')}`]);
