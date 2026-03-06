@@ -887,6 +887,39 @@
               `<div style="padding:6px 0 2px;font-size:11px">${varNote}</div>`,
               'HISTORICAL · 2YR'
             ));
+
+            // Monte Carlo VaR (Gaussian, calibrated from same 2yr history)
+            const mu = portReturns.reduce((s, r) => s + r, 0) / n;
+            const variance = portReturns.reduce((s, r) => s + (r - mu) ** 2, 0) / (n - 1);
+            const sigma = Math.sqrt(variance);
+            function randNorm() {
+              const u1 = Math.random(), u2 = Math.random();
+              return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            }
+            const MC_SIMS = 10000;
+            const mcReturns = Array.from({ length: MC_SIMS }, () => mu + sigma * randNorm());
+            mcReturns.sort((a, b) => a - b);
+            const mcIdx95 = Math.floor(MC_SIMS * 0.05);
+            const mcIdx99 = Math.floor(MC_SIMS * 0.01);
+            const mcVar95Ret = -mcReturns[mcIdx95];
+            const mcVar99Ret = -mcReturns[mcIdx99];
+            const mcVar95 = mcVar95Ret * totalValue;
+            const mcVar99 = mcVar99Ret * totalValue;
+            const mcTail = mcReturns.slice(0, mcIdx95 + 1);
+            const mcCvarRet = -(mcTail.reduce((s, r) => s + r, 0) / mcTail.length);
+            const mcCvar95 = mcCvarRet * totalValue;
+            const mcRows = [
+              ['1-Day VaR (95%)',  fmtPL(-mcVar95),                      fmtChange(-mcVar95Ret * 100)],
+              ['1-Day VaR (99%)',  fmtPL(-mcVar99),                      fmtChange(-mcVar99Ret * 100)],
+              ['10-Day VaR (95%)', fmtPL(-mcVar95 * Math.sqrt(10)),      fmtChange(-mcVar95Ret * Math.sqrt(10) * 100)],
+              ['CVaR / ES (95%)',  fmtPL(-mcCvar95),                     fmtChange(-mcCvarRet * 100)],
+            ];
+            const mcNote = dim(`Gaussian simulation · ${MC_SIMS.toLocaleString()} scenarios · Calibrated from ${n} trading days (~2yr) · σ=${(sigma * 100).toFixed(3)}%/day`);
+            printRaw(panel('Value at Risk (Monte Carlo)',
+              table(['Metric', 'Dollar Impact', 'Return'], mcRows) +
+              `<div style="padding:6px 0 2px;font-size:11px">${mcNote}</div>`,
+              'GAUSSIAN · 10K SIMS'
+            ));
           }
         } catch (_) { /* VaR is supplementary — fail silently */ }
 
