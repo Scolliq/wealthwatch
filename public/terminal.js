@@ -131,6 +131,40 @@
     return data;
   }
 
+  async function fetchChartDataLong(symbol, range) {
+    // range: '3y' or '5y'
+    const key = 'chartlong:' + symbol + ':' + range;
+    const cached = getCached(key);
+    if (cached) return cached;
+
+    const res = await fetch(`${API_BASE}?symbols=${symbol}&type=chartlong&range=${range}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const result = json.chart && json.chart.result && json.chart.result[0];
+    if (!result) throw new Error('No chart data');
+
+    const timestamps = result.timestamp || [];
+    const quote = result.indicators.quote[0];
+    const closes = quote.close || [];
+    const opens = quote.open || [];
+    const highs = quote.high || [];
+    const lows = quote.low || [];
+    const meta = result.meta;
+
+    const candles = [];
+    const lineData = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (closes[i] == null) continue;
+      const time = timestamps[i];
+      candles.push({ time, open: opens[i] || closes[i], high: highs[i] || closes[i], low: lows[i] || closes[i], close: closes[i] });
+      lineData.push({ time, value: closes[i] });
+    }
+
+    const data = { candles, lineData, closes: closes.filter(v => v != null), name: meta.shortName || symbol, price: meta.regularMarketPrice };
+    setCache(key, data);
+    return data;
+  }
+
   async function fetchOptionsData(symbol) {
     const key = 'options:' + symbol;
     const cached = getCached(key);
@@ -710,7 +744,7 @@
     print(`<span class="c-bright">  Portfolio:</span>`);
     print(`    ${sc('/portfolio')}     ${dim('Holdings with live prices (5s refresh)')}`);
     print(`    ${sc('/analytics')}     ${dim('Allocation, performance, OI flow & charts')}`);
-    print(`    ${sc('/montecarlo')}    ${dim('Monte Carlo simulation (100 paths, 60 days)')}`);
+    print(`    ${sc('/montecarlo')} ${dim('[1y|3y|5y]')} ${dim('Monte Carlo simulation (100 paths, 60 days)')}`);
     print(`    ${sc('/history')}       ${dim('Transaction history')}`);
     print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Buy / add holding')}`);
     print(`    ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')} ${dim('Sell holding')}`);
@@ -1302,8 +1336,14 @@
       scrollToBottom();
     },
 
-    '/montecarlo': async function() {
-      showLoading('Running Monte Carlo simulation...');
+    '/montecarlo': async function(args) {
+      // Usage: /montecarlo [1y|3y|5y]  — default 3y
+      const rangeArg = ((args && args[0]) || '3y').toLowerCase();
+      const validRanges = { '1y': '1y', '3y': '3y', '5y': '5y' };
+      const range = validRanges[rangeArg] || '3y';
+      const rangeLabel = range === '1y' ? '1 Year' : range === '3y' ? '3 Years' : '5 Years';
+
+      showLoading(`Running Monte Carlo (${rangeLabel} history)...`);
 
       let holdings;
       if (sb && currentUser) {
@@ -1323,87 +1363,82 @@
       }
 
       try {
-        // Fetch current prices + chart history for all holdings
+        // Fetch current prices + long-range chart history
         const [quotes, ...charts] = await Promise.all([
           fetchQuotes(holdings.map(h => h.sym)),
-          ...holdings.map(h => fetchChartData(h.sym).catch(() => null)),
+          ...holdings.map(h => fetchChartDataLong(h.sym, range).catch(() => fetchChartData(h.sym).catch(() => null))),
         ]);
         hideLoading();
 
         const positions = holdings.map((h, i) => {
           const q = quotes[h.sym];
-          const price = q ? q.price : (mockData[h.sym]?.price || h.avgCost);
-          return { ...h, price, value: price * h.qty, chart: charts[i] };
+          const price = q ? q.price : (mockData[h.sym] && mockData[h.sym].price || h.avgCost);
+          return { sym: h.sym, type: h.type, qty: h.qty, avgCost: h.avgCost, price, value: price * h.qty, chart: charts[i] };
         });
 
         const totalValue = positions.reduce((s, p) => s + p.value, 0);
 
-        // Build portfolio-level weighted daily returns from chart data
-        let portfolioCloses = null;
-        const validPositions = positions.filter(p => p.chart && p.chart.closes.length > 5);
+        // Build portfolio-level weighted daily close series
+        const validPositions = positions.filter(p => p.chart && p.chart.closes.length > 20);
 
-        if (validPositions.length > 0) {
-          // Find shortest series length
-          const minLen = Math.min(...validPositions.map(p => p.chart.closes.length));
-          const totalW = validPositions.reduce((s, p) => s + p.value, 0);
-
-          // Weighted portfolio value series
-          portfolioCloses = Array.from({ length: minLen }, (_, i) => {
-            return validPositions.reduce((sum, p) => {
-              const weight = p.value / totalW;
-              return sum + p.chart.closes[p.chart.closes.length - minLen + i] * weight;
-            }, 0);
-          });
-          // Scale to actual total value
-          const scaleFactor = totalValue / (portfolioCloses[portfolioCloses.length - 1] || 1);
-          portfolioCloses = portfolioCloses.map(v => v * scaleFactor);
-        }
-
-        if (!portfolioCloses || portfolioCloses.length < 5) {
+        if (validPositions.length === 0) {
           printLines([`<span class="c-red">Not enough historical data to run simulation.</span>`]);
           printBlank(); bindSlashCommands(); scrollToBottom();
           return;
         }
 
+        const minLen = Math.min.apply(null, validPositions.map(p => p.chart.closes.length));
+        const totalW = validPositions.reduce((s, p) => s + p.value, 0);
+
+        let portfolioCloses = Array.from({ length: minLen }, function(_, i) {
+          return validPositions.reduce(function(sum, p) {
+            return sum + p.chart.closes[p.chart.closes.length - minLen + i] * (p.value / totalW);
+          }, 0);
+        });
+        const scaleFactor = totalValue / (portfolioCloses[portfolioCloses.length - 1] || 1);
+        portfolioCloses = portfolioCloses.map(v => v * scaleFactor);
+
         const N_PATHS = 100;
         const N_DAYS = 60;
-        const { paths, annualVol } = runMonteCarlo(portfolioCloses, totalValue, N_PATHS, N_DAYS);
+        const mcResult = runMonteCarlo(portfolioCloses, totalValue, N_PATHS, N_DAYS);
+        const paths = mcResult.paths;
+        const annualVol = mcResult.annualVol;
+        const dataPointCount = portfolioCloses.length;
 
-        // Summary stats at day 30 and 60
-        const statsAt = (day) => {
+        const statsAt = function(day) {
           const vals = paths.map(p => p[day]).sort((a, b) => a - b);
-          const p = f => vals[Math.max(0, Math.floor(vals.length * f))];
-          return { p10: p(0.10), p25: p(0.25), p50: p(0.50), p75: p(0.75), p90: p(0.90) };
+          const pct = function(f) { return vals[Math.max(0, Math.floor(vals.length * f))]; };
+          return { p10: pct(0.10), p25: pct(0.25), p50: pct(0.50), p75: pct(0.75), p90: pct(0.90) };
         };
         const s30 = statsAt(30);
         const s60 = statsAt(N_DAYS);
-        const fmtDelta = (v) => {
+        const fmtDelta = function(v) {
           const d = v - totalValue;
           const pct = (d / totalValue * 100);
           const sign = d >= 0 ? '+' : '';
           const cls = d >= 0 ? 'positive' : 'negative';
-          return `<span class="${cls}">${sign}${fmtPrice(d)} (${sign}${pct.toFixed(1)}%)</span>`;
+          return '<span class="' + cls + '">' + sign + fmtPrice(d) + ' (' + sign + pct.toFixed(1) + '%)</span>';
         };
 
         const summaryRows = [
-          ['Current Value',      fmtPrice(totalValue), ''],
-          ['Annual Volatility',  `${(annualVol * 100).toFixed(1)}%`, ''],
+          ['Current Value',     fmtPrice(totalValue), ''],
+          ['Annual Volatility', (annualVol * 100).toFixed(1) + '%  ' + dim('(' + dataPointCount + ' trading days)'), ''],
           ['', bright('+30 Days'), bright('+60 Days')],
-          ['Bull case (90th)',   `${fmtPrice(s30.p90)} ${fmtDelta(s30.p90)}`, `${fmtPrice(s60.p90)} ${fmtDelta(s60.p90)}`],
-          ['Expected (median)',  `${fmtPrice(s30.p50)} ${fmtDelta(s30.p50)}`, `${fmtPrice(s60.p50)} ${fmtDelta(s60.p50)}`],
-          ['Bear case (10th)',   `${fmtPrice(s30.p10)} ${fmtDelta(s30.p10)}`, `${fmtPrice(s60.p10)} ${fmtDelta(s60.p10)}`],
+          ['Bull case (90th)',  fmtPrice(s30.p90) + ' ' + fmtDelta(s30.p90), fmtPrice(s60.p90) + ' ' + fmtDelta(s60.p90)],
+          ['Expected (median)', fmtPrice(s30.p50) + ' ' + fmtDelta(s30.p50), fmtPrice(s60.p50) + ' ' + fmtDelta(s60.p50)],
+          ['Bear case (10th)',  fmtPrice(s30.p10) + ' ' + fmtDelta(s30.p10), fmtPrice(s60.p10) + ' ' + fmtDelta(s60.p10)],
         ];
-        printRaw(panel('Monte Carlo Summary', table(['Scenario', '+30 Days', '+60 Days'], summaryRows), `${N_PATHS} PATHS`));
+        printRaw(panel('Monte Carlo Summary · ' + rangeLabel + ' History', table(['Scenario', '+30 Days', '+60 Days'], summaryRows), N_PATHS + ' PATHS'));
 
         const mcId = 'mc-' + Date.now();
-        const canvasHtml = `<canvas id="${mcId}" height="200" style="width:100%;display:block;"></canvas>
-          <div style="font-size:10px;color:#555;margin-top:4px;display:flex;gap:16px">
-            <span><span style="color:#5faf5f">━━</span> Median</span>
-            <span><span style="color:rgba(95,175,95,0.6)">╌╌</span> 90th pct</span>
-            <span><span style="color:rgba(215,95,95,0.6)">╌╌</span> 10th pct</span>
-            <span><span style="color:rgba(95,135,255,0.4)">░░</span> P25–P75 band</span>
-          </div>`;
-        printRaw(panel(`Portfolio Simulation · ${N_PATHS} Paths · 60 Days`, canvasHtml, 'GBM'));
+        const canvasHtml = '<canvas id="' + mcId + '" height="200" style="width:100%;display:block;"></canvas>' +
+          '<div style="font-size:10px;color:#555;margin-top:4px;display:flex;gap:16px">' +
+          '<span><span style="color:#5faf5f">━━</span> Median</span>' +
+          '<span><span style="color:rgba(95,175,95,0.6)">╌╌</span> 90th pct</span>' +
+          '<span><span style="color:rgba(215,95,95,0.6)">╌╌</span> 10th pct</span>' +
+          '<span><span style="color:rgba(95,135,255,0.4)">░░</span> P25–P75 band</span>' +
+          '</div>';
+        printRaw(panel('Portfolio Simulation · ' + N_PATHS + ' Paths · 60 Days', canvasHtml, 'GBM'));
         requestAnimationFrame(() => drawMonteCarloCanvas(mcId, paths, totalValue));
 
       } catch (e) {
@@ -1411,7 +1446,7 @@
         printLines([`<span class="c-red">Simulation failed:</span> ${e.message}`]);
       }
       printBlank();
-      print(dim(`Based on 30d historical returns · Geometric Brownian Motion · Not financial advice`));
+      print(dim('Usage: /montecarlo [1y|3y|5y]  ·  GBM model  ·  Not financial advice'));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -1763,7 +1798,7 @@
     else if (cmd === '/remove' || cmd === '/rm') removeCmd(parts);
     else if (cmd === '/watch') commands['/watch'](parts.slice(1));
     else if (cmd === '/unwatch') commands['/unwatch'](parts.slice(1));
-    else if (cmd === '/montecarlo' || cmd === '/mc') commands['/montecarlo']();
+    else if (cmd === '/montecarlo' || cmd === '/mc') commands['/montecarlo'](parts.slice(1));
     else if (commands[cmd]) commands[cmd]();
     else printLines([`<span class="c-red">unknown:</span> ${trimmed}`, `${sc('/help')} for commands`]);
   }

@@ -24,6 +24,59 @@ function yahooFetch(url) {
   });
 }
 
+// Extract previous close from v8/chart result — tries multiple sources
+function extractPrevClose(chartResult) {
+  const meta = chartResult.meta || {};
+  const closes = (
+    chartResult.indicators &&
+    chartResult.indicators.quote &&
+    chartResult.indicators.quote[0] &&
+    chartResult.indicators.quote[0].close || []
+  ).filter(v => v !== null && v !== undefined && v > 0);
+
+  // meta.previousClose is the most direct (not always present)
+  if (meta.previousClose) return meta.previousClose;
+
+  // Second-to-last close in the series = yesterday's close
+  // (last entry is today's intraday or final close = regularMarketPrice)
+  if (closes.length >= 2) return closes[closes.length - 2];
+
+  return null;
+}
+
+// Fetch v8/chart for a symbol and build a quote-compatible object
+async function fetchChartQuote(sym) {
+  const data = await yahooFetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`
+  );
+  const result = data.chart && data.chart.result && data.chart.result[0];
+  if (!result) throw new Error('No chart result for ' + sym);
+
+  const meta = result.meta;
+  const indicators = result.indicators && result.indicators.quote && result.indicators.quote[0];
+  const prevClose = extractPrevClose(result);
+  const price = meta.regularMarketPrice;
+
+  return {
+    symbol: sym,
+    shortName: meta.shortName || meta.symbol || sym,
+    longName: meta.longName,
+    regularMarketPrice: price,
+    regularMarketPreviousClose: prevClose,
+    regularMarketChangePercent: (prevClose && price)
+      ? ((price - prevClose) / prevClose) * 100
+      : null,
+    regularMarketDayHigh: meta.regularMarketDayHigh ||
+      (indicators && indicators.high ? Math.max.apply(null, indicators.high.filter(Boolean)) : null),
+    regularMarketDayLow: meta.regularMarketDayLow ||
+      (indicators && indicators.low ? Math.min.apply(null, indicators.low.filter(Boolean)) : null),
+    regularMarketOpen: meta.regularMarketOpen ||
+      (indicators && indicators.open ? indicators.open.filter(Boolean).pop() : null),
+    regularMarketVolume: meta.regularMarketVolume,
+    marketCap: meta.marketCap || null,
+  };
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
@@ -34,98 +87,70 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Missing symbols parameter' });
   }
 
-  try {
-    if (type === 'chart') {
-      // Single symbol chart data
+  // ── Chart mode ──────────────────────────────────────────────────────────────
+  if (type === 'chart' || type === 'chartlong') {
+    try {
       const sym = symbols.split(',')[0];
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1mo`;
-      const data = await yahooFetch(url);
+      const range = (type === 'chartlong' && req.query.range) ? req.query.range : '1mo';
+      const data = await yahooFetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=${encodeURIComponent(range)}`
+      );
       return res.json(data);
+    } catch (err) {
+      return res.status(502).json({ error: 'Chart fetch failed', details: err.message });
+    }
+  }
+
+  // ── Quote mode: try v7 first, then fall back to per-symbol v8/chart ─────────
+  const syms = symbols.split(',');
+
+  try {
+    const data = await yahooFetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`
+    );
+
+    const results = data.quoteResponse && data.quoteResponse.result;
+    if (!Array.isArray(results) || results.length === 0) {
+      throw new Error('Empty v7 response');
     }
 
-    // Default: quote data for multiple symbols
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`;
-    const data = await yahooFetch(url);
+    // For any symbol where change% is missing/zero, supplement from v8/chart
+    const needsChart = results.filter(q =>
+      q.regularMarketPrice && !q.regularMarketChangePercent
+    );
 
-    const results = data.quoteResponse?.result;
-    if (Array.isArray(results)) {
-      // Fix change% when prevClose is available
-      results.forEach(q => {
-        if (!q.regularMarketChangePercent && q.regularMarketPrice && q.regularMarketPreviousClose) {
-          q.regularMarketChangePercent =
-            ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
+    if (needsChart.length > 0) {
+      const chartResults = await Promise.allSettled(
+        needsChart.map(q => fetchChartQuote(q.symbol))
+      );
+      chartResults.forEach((r, i) => {
+        if (r.status !== 'fulfilled') return;
+        const q = needsChart[i];
+        const cq = r.value;
+        if (cq.regularMarketChangePercent !== null) {
+          q.regularMarketChangePercent = cq.regularMarketChangePercent;
+        }
+        if (!q.regularMarketPreviousClose && cq.regularMarketPreviousClose) {
+          q.regularMarketPreviousClose = cq.regularMarketPreviousClose;
         }
       });
-
-      // Supplement missing prevClose via v8/chart for any symbol still showing 0 change
-      const needsChart = results.filter(q =>
-        !q.regularMarketChangePercent && q.regularMarketPrice && !q.regularMarketPreviousClose
-      );
-
-      if (needsChart.length > 0) {
-        const chartResults = await Promise.allSettled(
-          needsChart.map(q =>
-            yahooFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(q.symbol)}?interval=1d&range=5d`)
-          )
-        );
-        chartResults.forEach((r, i) => {
-          if (r.status !== 'fulfilled') return;
-          const chartResult = r.value.chart?.result?.[0];
-          if (!chartResult) return;
-          const closes = chartResult.indicators?.quote?.[0]?.close?.filter(Boolean) || [];
-          const prevClose = chartResult.meta?.previousClose ||
-            (closes.length >= 2 ? closes[closes.length - 2] : null);
-          if (!prevClose) return;
-          const q = needsChart[i];
-          q.regularMarketPreviousClose = prevClose;
-          q.regularMarketChangePercent =
-            ((q.regularMarketPrice - prevClose) / prevClose) * 100;
-        });
-      }
     }
 
     return res.json(data);
 
   } catch (err) {
-    // Try v8 chart as fallback for quotes (extract price from chart meta)
-    if (type !== 'chart') {
-      try {
-        const syms = symbols.split(',');
-        const results = await Promise.allSettled(
-          syms.map(s =>
-            yahooFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?interval=1d&range=5d`)
-          )
-        );
+    // v7 failed entirely — use v8/chart for all symbols
+    try {
+      const chartResults = await Promise.allSettled(syms.map(fetchChartQuote));
+      const quotes = chartResults
+        .map((r, i) => r.status === 'fulfilled' ? r.value : null)
+        .filter(Boolean);
 
-        const quotes = [];
-        results.forEach((r, i) => {
-          if (r.status === 'fulfilled' && r.value.chart?.result?.[0]) {
-            const meta = r.value.chart.result[0].meta;
-            const indicators = r.value.chart.result[0].indicators?.quote?.[0];
-            quotes.push({
-              symbol: syms[i],
-              shortName: meta.shortName || meta.symbol || syms[i],
-              longName: meta.longName,
-              regularMarketPrice: meta.regularMarketPrice,
-              regularMarketChangePercent: meta.previousClose
-                ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100
-                : 0,
-              regularMarketDayHigh: meta.regularMarketDayHigh || (indicators?.high ? Math.max(...indicators.high.filter(Boolean)) : null),
-              regularMarketDayLow: meta.regularMarketDayLow || (indicators?.low ? Math.min(...indicators.low.filter(Boolean)) : null),
-              regularMarketPreviousClose: meta.previousClose,
-              regularMarketOpen: meta.regularMarketOpen || (indicators?.open ? indicators.open.filter(Boolean).pop() : null),
-              regularMarketVolume: meta.regularMarketVolume,
-              marketCap: meta.marketCap || null,
-            });
-          }
-        });
-
-        if (quotes.length > 0) {
-          return res.json({ quoteResponse: { result: quotes } });
-        }
-      } catch (e) {
-        // Fall through to error
+      if (quotes.length > 0) {
+        return res.json({ quoteResponse: { result: quotes } });
       }
+    } catch (e) {
+      // fall through
     }
 
     return res.status(502).json({ error: 'Failed to fetch from Yahoo Finance', details: err.message });
