@@ -158,6 +158,7 @@
     META:      { name: 'Meta Platforms',      price: 501.33, change: 2.08,  high: 507.12, low: 498.60, vol: '18.5M',  cap: '1.28T' },
     AMD:       { name: 'AMD Inc.',            price: 168.90, change: -1.42, high: 172.33, low: 167.15, vol: '45.1M',  cap: '273B' },
     SPY:       { name: 'SPDR S&P 500 ETF',   price: 584.23, change: 1.24,  high: 586.10, low: 581.05, vol: '68.2M',  cap: '538B' },
+    GLD:       { name: 'SPDR Gold Trust',     price: 220.50, change: 0.45,  high: 221.80, low: 219.20, vol: '8.2M',   cap: '55B'  },
     'BTC-USD': { name: 'Bitcoin',             price: 67843,  change: 2.31,  high: 68900,  low: 66200,  vol: '28.4B',  cap: '1.33T' },
     'ETH-USD': { name: 'Ethereum',            price: 3521,   change: 1.87,  high: 3580,   low: 3455,   vol: '14.1B',  cap: '423B' },
   };
@@ -637,8 +638,9 @@
             fmtPLPct(i.plPct),
           ]);
 
-          const footer = ['', '', '', `<strong>${fmtPrice(groupValue)}</strong>`, '', `<strong>${fmtPL(groupPL)}</strong>`, ''];
-          html += panel(`${meta.icon} ${meta.label}`, table(['Ticker', 'Qty', 'Cost', 'Price', 'Day', 'P/L', '%'], rows, footer));
+          const groupDayPL = items.reduce((s, i) => s + (i.value * i.change / 100), 0);
+          const footer = ['', '', '', `<strong>${fmtPrice(groupValue)}</strong>`, fmtPL(groupDayPL), `<strong>${fmtPL(groupPL)}</strong>`, ''];
+          html += panel(`${meta.icon} ${meta.label}`, table(['Ticker', 'Qty', 'Cost', 'Price', 'Day %', 'P/L', '%'], rows, footer));
         });
 
         // Total summary bar
@@ -734,12 +736,13 @@
         const totalCost = positions.reduce((s, p) => s + p.avgCost * p.qty, 0);
         const totalPLPct = totalCost > 0 ? ((totalPL / totalCost) * 100) : 0;
         const dayPL = positions.reduce((s, p) => s + (p.value * p.dayChange / 100), 0);
+        const dayPct = totalValue > 0 ? (dayPL / (totalValue - dayPL)) * 100 : 0;
 
         // Summary
         const summaryRows = [
           ['Total Value', `<strong>${fmtPrice(totalValue)}</strong>`],
           ['Total P/L', `<strong>${fmtPL(totalPL)}</strong> (${fmtPLPct(totalPLPct)})`],
-          ['Day P/L', `<strong>${fmtPL(dayPL)}</strong>`],
+          ['Day P/L', `<strong>${fmtPL(dayPL)}</strong> (${fmtPLPct(dayPct)})`],
           ['Positions', String(positions.length)],
           ['Asset Types', [...new Set(positions.map(p => ASSET_TYPES[p.type]?.label || p.type))].join(', ')],
           ['Best Performer', positions.length ? `${tn(positions.reduce((a, b) => a.plPct > b.plPct ? a : b).sym)}` : '—'],
@@ -787,17 +790,27 @@
         typeAllocHtml += '</div>';
         printRaw(panel('Allocation by Asset Type', typeAllocHtml));
 
-        // Performance ranking
+        // Performance ranking (sorted by total P/L)
         const sorted = [...positions].sort((a, b) => b.plPct - a.plPct);
         const perfRows = sorted.map(p => [
           `${ASSET_TYPES[p.type]?.icon || '·'} ${tn(p.sym)}`,
           dim(ASSET_TYPES[p.type]?.label || p.type),
           fmtPrice(p.value),
-          fmtChange(p.dayChange),
           fmtPL(p.pl),
           fmtPLPct(p.plPct),
         ]);
-        printRaw(panel('Performance Ranking', table(['Ticker', 'Type', 'Value', 'Day %', 'P/L', '%'], perfRows)));
+        printRaw(panel('Performance Ranking', table(['Ticker', 'Type', 'Value', 'P/L', '%'], perfRows), 'BY TOTAL P/L'));
+
+        // Today's movers (sorted by day % change)
+        const movers = [...positions].sort((a, b) => b.dayChange - a.dayChange);
+        const moverRows = movers.map(p => [
+          `${ASSET_TYPES[p.type]?.icon || '·'} ${tn(p.sym)}`,
+          dim(ASSET_TYPES[p.type]?.label || p.type),
+          fmtPrice(p.value),
+          fmtChange(p.dayChange),
+          fmtPL(p.value * p.dayChange / 100),
+        ]);
+        printRaw(panel("Today's Movers", table(['Ticker', 'Type', 'Value', 'Day %', 'Day P/L'], moverRows), 'BY DAY CHANGE'));
 
       } catch (e) {
         hideLoading();
