@@ -596,7 +596,7 @@
 
         // Group by asset type
         const groups = {};
-        let totalValue = 0, totalPL = 0, totalCost = 0;
+        let totalValue = 0, totalPL = 0, totalCost = 0, totalDayPL = 0;
 
         holdings.forEach(h => {
           const q = data[h.sym];
@@ -608,6 +608,7 @@
           totalValue += value;
           totalPL += pl;
           totalCost += h.avgCost * h.qty;
+          totalDayPL += value * change / 100;
 
           if (!groups[h.type]) groups[h.type] = [];
           groups[h.type].push({
@@ -642,9 +643,11 @@
 
         // Total summary bar
         const totalPLPct = totalCost > 0 ? ((totalPL / totalCost) * 100) : 0;
+        const totalDayPct = totalValue > 0 ? ((totalDayPL / (totalValue - totalDayPL)) * 100) : 0;
         html += `<div class="tui-panel" style="border-color:var(--accent)"><div class="tui-panel-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px">`;
         html += `<span>${dim('Total Value')} <strong>${fmtPrice(totalValue)}</strong></span>`;
         html += `<span>${dim('Total P/L')} <strong>${fmtPL(totalPL)}</strong> (${fmtPLPct(totalPLPct)})</span>`;
+        html += `<span>${dim('Day P/L')} <strong>${fmtPL(totalDayPL)}</strong> (${fmtPLPct(totalDayPct)})</span>`;
         html += `<span>${dim('Positions')} <strong>${holdings.length}</strong></span>`;
         html += `<span class="c-dim" style="font-size:10px">↻ updating every 5s</span>`;
         html += `</div></div>`;
@@ -790,10 +793,11 @@
           `${ASSET_TYPES[p.type]?.icon || '·'} ${tn(p.sym)}`,
           dim(ASSET_TYPES[p.type]?.label || p.type),
           fmtPrice(p.value),
+          fmtChange(p.dayChange),
           fmtPL(p.pl),
           fmtPLPct(p.plPct),
         ]);
-        printRaw(panel('Performance Ranking', table(['Ticker', 'Type', 'Value', 'P/L', '%'], perfRows)));
+        printRaw(panel('Performance Ranking', table(['Ticker', 'Type', 'Value', 'Day %', 'P/L', '%'], perfRows)));
 
       } catch (e) {
         hideLoading();
