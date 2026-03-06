@@ -491,9 +491,24 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); }
 ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
 
+/* ─── Compare Grid ────────────────────────────────────── */
+
+.compare-grid {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.compare-grid > .tui-panel {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
 /* ─── Responsive — Tablet ──────────────────────────────── */
 
 @media (max-width: 768px) {
+  .compare-grid { flex-direction: column; }
   body { font-size: 12px; }
   .status-bar { font-size: 11px; padding: 0 8px; }
   .terminal { padding: 12px; }

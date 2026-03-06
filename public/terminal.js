@@ -17,6 +17,7 @@
 
   let sb = null;
   let currentUser = null;
+  let activePortfolioId = 'main';
 
   function supabaseEnabled() {
     return SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON !== 'YOUR_SUPABASE_ANON_KEY';
@@ -51,6 +52,152 @@
     }
   }
   updateAuthUI();
+
+  // ─── Portfolio Management ─────────────────────────────
+
+  function loadPortfolioStore() {
+    try { return JSON.parse(localStorage.getItem('ww_portfolios') || '{"activeId":"main","portfolios":[]}'); }
+    catch { return { activeId: 'main', portfolios: [] }; }
+  }
+  function savePortfolioStore(data) { localStorage.setItem('ww_portfolios', JSON.stringify(data)); }
+
+  function getAllPortfolios() {
+    const store = loadPortfolioStore();
+    return [
+      { id: 'main', name: 'Main Portfolio', type: currentUser ? 'supabase' : 'demo', holdings: null },
+      ...store.portfolios.map(p => ({ ...p, type: 'local' })),
+    ];
+  }
+
+  function getPortfolioByNameOrIndex(arg) {
+    const portfolios = getAllPortfolios();
+    const n = parseInt(arg);
+    if (!isNaN(n) && n >= 1 && n <= portfolios.length) return portfolios[n - 1];
+    const lower = String(arg).toLowerCase();
+    return portfolios.find(p => p.name.toLowerCase() === lower) || null;
+  }
+
+  function createLocalPortfolio(name) {
+    const store = loadPortfolioStore();
+    const id = 'p_' + Date.now();
+    store.portfolios.push({ id, name, holdings: [] });
+    store.activeId = id;
+    savePortfolioStore(store);
+    activePortfolioId = id;
+    updatePortfolioUI();
+    return id;
+  }
+
+  function setActivePortfolio(id) {
+    const store = loadPortfolioStore();
+    store.activeId = id;
+    savePortfolioStore(store);
+    activePortfolioId = id;
+    updatePortfolioUI();
+  }
+
+  function getLocalHoldings(id) {
+    const store = loadPortfolioStore();
+    const p = store.portfolios.find(p => p.id === id);
+    return p ? (p.holdings || []) : [];
+  }
+
+  function addLocalHolding(id, sym, qty, avgCost, type) {
+    const store = loadPortfolioStore();
+    const p = store.portfolios.find(p => p.id === id);
+    if (!p) throw new Error('Portfolio not found');
+    const existing = p.holdings.find(h => h.sym === sym);
+    if (existing) {
+      const totalQty = existing.qty + qty;
+      existing.avgCost = ((existing.avgCost * existing.qty) + (avgCost * qty)) / totalQty;
+      existing.qty = totalQty;
+    } else {
+      p.holdings.push({ sym, qty, avgCost, type });
+    }
+    savePortfolioStore(store);
+  }
+
+  function sellLocalHolding(id, sym, qty) {
+    const store = loadPortfolioStore();
+    const p = store.portfolios.find(p => p.id === id);
+    if (!p) throw new Error('Portfolio not found');
+    const h = p.holdings.find(h => h.sym === sym);
+    if (!h) throw new Error(`You don't hold ${sym} in this portfolio`);
+    if (qty > h.qty) throw new Error(`You only hold ${h.qty} of ${sym} in this portfolio`);
+    if (qty === h.qty) { p.holdings = p.holdings.filter(h2 => h2.sym !== sym); }
+    else { h.qty -= qty; }
+    savePortfolioStore(store);
+  }
+
+  function removeLocalHolding(id, sym) {
+    const store = loadPortfolioStore();
+    const p = store.portfolios.find(p => p.id === id);
+    if (!p) throw new Error('Portfolio not found');
+    p.holdings = p.holdings.filter(h => h.sym !== sym);
+    savePortfolioStore(store);
+  }
+
+  function renameLocalPortfolio(id, name) {
+    const store = loadPortfolioStore();
+    const p = store.portfolios.find(p => p.id === id);
+    if (!p) throw new Error('Portfolio not found');
+    p.name = name;
+    savePortfolioStore(store);
+  }
+
+  function deleteLocalPortfolio(id) {
+    const store = loadPortfolioStore();
+    store.portfolios = store.portfolios.filter(p => p.id !== id);
+    if (store.activeId === id) store.activeId = 'main';
+    savePortfolioStore(store);
+    if (activePortfolioId === id) { activePortfolioId = 'main'; }
+    updatePortfolioUI();
+  }
+
+  function updatePortfolioUI() {
+    const el = document.getElementById('portfolio-indicator');
+    if (!el) return;
+    if (activePortfolioId === 'main') {
+      el.textContent = '◆ Main';
+    } else {
+      const store = loadPortfolioStore();
+      const p = store.portfolios.find(p => p.id === activePortfolioId);
+      el.textContent = p ? `◆ ${p.name}` : '◆ Main';
+    }
+  }
+
+  // ─── Demo holdings (shared) ───────────────────────────
+
+  const DEMO_HOLDINGS = [
+    { sym: 'AAPL', qty: 50, avgCost: 171.20, type: 'equity' },
+    { sym: 'NVDA', qty: 25, avgCost: 480.50, type: 'equity' },
+    { sym: 'TSLA', qty: 10, avgCost: 248.90, type: 'equity' },
+    { sym: 'BTC-USD', qty: 0.5, avgCost: 42100, type: 'crypto' },
+    { sym: 'GLD', qty: 20, avgCost: 185.00, type: 'commodity' },
+    { sym: 'SPY', qty: 30, avgCost: 440.00, type: 'etf' },
+  ];
+
+  async function getHoldingsForPortfolio(id) {
+    if (id === 'main') {
+      if (sb && currentUser) {
+        try {
+          const dbHoldings = await getHoldings();
+          if (dbHoldings && dbHoldings.length > 0) {
+            return {
+              holdings: dbHoldings.map(h => ({ sym: h.symbol, qty: Number(h.qty), avgCost: Number(h.avg_cost), type: h.asset_type, date: h.purchase_date, notes: h.notes })),
+              isUserPortfolio: true,
+            };
+          }
+        } catch (e) {}
+      }
+      return { holdings: DEMO_HOLDINGS, isUserPortfolio: false };
+    }
+    return { holdings: getLocalHoldings(id), isUserPortfolio: true };
+  }
+
+  // Init active portfolio from storage
+  activePortfolioId = loadPortfolioStore().activeId || 'main';
+  updatePortfolioUI();
 
   // ─── Data fetching ──────────────────────────────────────
 
@@ -466,10 +613,12 @@
     printBlank();
 
     print(`<span class="c-bright">  Portfolio:</span>`);
+    print(`    ${sc('/portfolios')}    ${dim('Manage & compare portfolios')}`);
     print(`    ${sc('/portfolio')}     ${dim('Holdings with live prices (5s refresh)')}`);
     print(`    ${sc('/analytics')}     ${dim('Allocation, performance & stats')}`);
+    print(`    ${sc('/compare')} ${dim('<#> <#>')}  ${dim('Side-by-side portfolio comparison')}`);
     print(`    ${sc('/history')}       ${dim('Transaction history')}`);
-    print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Buy / add holding')}`);
+    print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Buy / add to active portfolio')}`);
     print(`    ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')} ${dim('Sell holding')}`);
     print(`    ${sc('/remove')} ${dim('<SYM>')}             ${dim('Remove holding entirely')}`);
     printBlank();
@@ -503,10 +652,16 @@
         `  ${sc('/news')}                    ${dim('Headlines')}`,
         '',
         bright('Portfolio'),
-        `  ${sc('/portfolio')}               ${dim('Holdings with live 5s prices')}`,
-        `  ${sc('/analytics')}               ${dim('Allocation & performance')}`,
+        `  ${sc('/portfolios')}              ${dim('List & manage named portfolios')}`,
+        `  ${sc('/portfolio')} ${dim('[#]')}             ${dim('Holdings with live 5s prices')}`,
+        `  ${sc('/analytics')} ${dim('[#]')}             ${dim('Allocation & performance')}`,
+        `  ${sc('/compare')} ${dim('<#> <#>')}           ${dim('Side-by-side comparison')}`,
+        `  ${sc('/newportfolio')} ${dim('<name>')}        ${dim('Create a new portfolio')}`,
+        `  ${sc('/switchportfolio')} ${dim('<#>')}        ${dim('Set active portfolio')}`,
+        `  ${sc('/renameportfolio')} ${dim('<#> <name>')} ${dim('Rename a portfolio')}`,
+        `  ${sc('/deleteportfolio')} ${dim('<#>')}        ${dim('Delete a portfolio')}`,
         `  ${sc('/history')}                 ${dim('Transaction log')}`,
-        `  ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}   ${dim('Buy shares (auto-detects type)')}`,
+        `  ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}   ${dim('Buy shares (active portfolio)')}`,
         `  ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')}  ${dim('Sell shares')}`,
         `  ${sc('/remove')} ${dim('<SYM>')}              ${dim('Remove entire position')}`,
         '',
@@ -557,35 +712,22 @@
       scrollToBottom();
     },
 
-    '/portfolio': async function() {
+    '/portfolio': async function(portfolioArg) {
       stopLivePrices(); // Stop any previous poller
-      showLoading('Fetching portfolio...');
 
-      let holdings;
-      let isUserPortfolio = false;
+      const targetPortfolioId = portfolioArg
+        ? (getPortfolioByNameOrIndex(portfolioArg)?.id || activePortfolioId)
+        : activePortfolioId;
+      const targetMeta = getAllPortfolios().find(p => p.id === targetPortfolioId) || getAllPortfolios()[0];
 
-      if (sb && currentUser) {
-        try {
-          const dbHoldings = await getHoldings();
-          if (dbHoldings && dbHoldings.length > 0) {
-            holdings = dbHoldings.map(h => ({
-              sym: h.symbol, qty: Number(h.qty), avgCost: Number(h.avg_cost),
-              type: h.asset_type, date: h.purchase_date, notes: h.notes,
-            }));
-            isUserPortfolio = true;
-          }
-        } catch (e) { /* fall through */ }
-      }
+      showLoading(`Fetching ${targetMeta.name}...`);
 
-      if (!holdings) {
-        holdings = [
-          { sym: 'AAPL', qty: 50, avgCost: 171.20, type: 'equity' },
-          { sym: 'NVDA', qty: 25, avgCost: 480.50, type: 'equity' },
-          { sym: 'TSLA', qty: 10, avgCost: 248.90, type: 'equity' },
-          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100, type: 'crypto' },
-          { sym: 'GLD', qty: 20, avgCost: 185.00, type: 'commodity' },
-          { sym: 'SPY', qty: 30, avgCost: 440.00, type: 'etf' },
-        ];
+      const { holdings, isUserPortfolio } = await getHoldingsForPortfolio(targetPortfolioId);
+
+      if (holdings.length === 0) {
+        hideLoading();
+        printLines([dim(`No holdings in ${targetMeta.name}. Use ${sc('/add')} to add positions.`), sc('/portfolios')]);
+        return;
       }
 
       const allSyms = holdings.map(h => h.sym);
@@ -684,37 +826,28 @@
           print(dim(`Demo portfolio. ${sc('/signup')} to save your own.`));
         }
       }
-      print(dim(`${sc('/analytics')} for deep stats  ·  ${sc('/chart')} <ticker> for charts  ·  ${sc('/history')} for trades`));
+      const pIdx = getAllPortfolios().findIndex(p => p.id === targetPortfolioId) + 1;
+      const analyticsLink = pIdx > 1 ? `/analytics ${pIdx}` : '/analytics';
+      print(dim(`${sc(analyticsLink)} for deep stats  ·  ${sc('/chart')} <ticker> for charts  ·  ${sc('/portfolios')} to manage`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
     },
 
-    '/analytics': async function() {
-      showLoading('Analyzing portfolio...');
+    '/analytics': async function(portfolioArg) {
+      const targetPortfolioId = portfolioArg
+        ? (getPortfolioByNameOrIndex(portfolioArg)?.id || activePortfolioId)
+        : activePortfolioId;
+      const targetMeta = getAllPortfolios().find(p => p.id === targetPortfolioId) || getAllPortfolios()[0];
 
-      let holdings;
-      let isUserPortfolio = false;
+      showLoading(`Analyzing ${targetMeta.name}...`);
 
-      if (sb && currentUser) {
-        try {
-          const dbHoldings = await getHoldings();
-          if (dbHoldings && dbHoldings.length > 0) {
-            holdings = dbHoldings.map(h => ({ sym: h.symbol, qty: Number(h.qty), avgCost: Number(h.avg_cost), type: h.asset_type }));
-            isUserPortfolio = true;
-          }
-        } catch (e) {}
-      }
+      const { holdings, isUserPortfolio } = await getHoldingsForPortfolio(targetPortfolioId);
 
-      if (!holdings) {
-        holdings = [
-          { sym: 'AAPL', qty: 50, avgCost: 171.20, type: 'equity' },
-          { sym: 'NVDA', qty: 25, avgCost: 480.50, type: 'equity' },
-          { sym: 'TSLA', qty: 10, avgCost: 248.90, type: 'equity' },
-          { sym: 'BTC-USD', qty: 0.5, avgCost: 42100, type: 'crypto' },
-          { sym: 'GLD', qty: 20, avgCost: 185.00, type: 'commodity' },
-          { sym: 'SPY', qty: 30, avgCost: 440.00, type: 'etf' },
-        ];
+      if (holdings.length === 0) {
+        hideLoading();
+        printLines([dim(`No holdings in ${targetMeta.name}. Use ${sc('/add')} to add positions.`), sc('/portfolios')]);
+        return;
       }
 
       try {
@@ -748,7 +881,7 @@
           ['Best Performer', positions.length ? `${tn(positions.reduce((a, b) => a.plPct > b.plPct ? a : b).sym)}` : '—'],
           ['Worst Performer', positions.length ? `${tn(positions.reduce((a, b) => a.plPct < b.plPct ? a : b).sym)}` : '—'],
         ];
-        printRaw(panel('Portfolio Summary', table(['Metric', 'Value'], summaryRows), isUserPortfolio ? 'YOUR DATA' : 'DEMO'));
+        printRaw(panel('Portfolio Summary · ' + targetMeta.name, table(['Metric', 'Value'], summaryRows), isUserPortfolio ? 'YOUR DATA' : 'DEMO'));
 
         // Allocation by position
         let allocHtml = '<div class="alloc-bar">';
@@ -972,6 +1105,27 @@
         hideLoading();
         printLines([`<span class="c-red">Error:</span> ${e.message}`]);
       }
+      printBlank();
+      bindSlashCommands();
+      scrollToBottom();
+    },
+
+    '/portfolios': function() {
+      const portfolios = getAllPortfolios();
+      const rows = portfolios.map((p, i) => {
+        const isActive = p.id === activePortfolioId;
+        const count = p.type === 'local' ? String((p.holdings || []).length) : (currentUser ? dim('sync') : dim('6 demo'));
+        const storage = p.type === 'supabase' ? `<span class="c-cyan">Supabase</span>` : p.type === 'demo' ? dim('Demo') : dim('Local');
+        const activeMark = isActive ? pos('●') : dim('○');
+        const num = String(i + 1);
+        const viewLink = sc(`/portfolio ${num}`);
+        const switchLink = !isActive ? sc(`/switchportfolio ${num}`) : dim('active');
+        const deleteLink = p.id !== 'main' ? sc(`/deleteportfolio ${num}`) : dim('—');
+        return [activeMark, dim(num), `<strong>${p.name}</strong>`, count, storage, `${viewLink}  ${switchLink}  ${deleteLink}`];
+      });
+      printRaw(panel('Portfolios', table(['', '#', 'Name', 'Holdings', 'Storage', 'Actions'], rows), `${portfolios.length} TOTAL`));
+      printBlank();
+      print(dim(`${sc('/newportfolio <name>')}  ·  ${sc('/compare <#> <#>')}  ·  ${sc('/renameportfolio <#> <name>')}`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -1245,8 +1399,11 @@
   }
 
   async function addCmd(parts) {
-    if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
-    if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    const isLocalPortfolio = activePortfolioId !== 'main';
+    if (!isLocalPortfolio) {
+      if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+      if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    }
 
     // /add AAPL 10 150.00 [equity|bond|commodity|crypto|etf]
     if (parts.length < 4) {
@@ -1271,13 +1428,18 @@
     if (isNaN(qty) || qty <= 0) { printLines([`<span class="c-red">Invalid qty:</span> ${parts[2]}`]); return; }
     if (isNaN(cost) || cost < 0) { printLines([`<span class="c-red">Invalid cost:</span> ${parts[3]}`]); return; }
 
-    showLoading(`Adding ${qty} ${sym}...`);
+    const activeMeta = getAllPortfolios().find(p => p.id === activePortfolioId);
+    showLoading(`Adding ${qty} ${sym} to ${activeMeta?.name || 'portfolio'}...`);
     try {
-      await addHolding(sym, qty, cost, assetType, new Date().toISOString().split('T')[0]);
+      if (isLocalPortfolio) {
+        addLocalHolding(activePortfolioId, sym, qty, cost, assetType);
+      } else {
+        await addHolding(sym, qty, cost, assetType, new Date().toISOString().split('T')[0]);
+      }
       hideLoading();
       printLines([
         `<span class="c-green">Bought ${qty} × ${sym} @ ${fmtPrice(cost)}</span>  ${dim(ASSET_TYPES[assetType]?.icon + ' ' + ASSET_TYPES[assetType]?.label)}`,
-        dim(`Total: ${fmtPrice(qty * cost)}  ·  ${sc('/portfolio')} to view holdings`),
+        dim(`Total: ${fmtPrice(qty * cost)}  ·  ${sc('/portfolio')} to view  ·  Portfolio: ${activeMeta?.name || 'Main'}`),
       ]);
     } catch (e) {
       hideLoading();
@@ -1286,8 +1448,11 @@
   }
 
   async function sellCmd(parts) {
-    if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
-    if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    const isLocalPortfolio = activePortfolioId !== 'main';
+    if (!isLocalPortfolio) {
+      if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+      if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    }
 
     // /sell AAPL 5 200.00
     if (parts.length < 4) {
@@ -1309,7 +1474,11 @@
 
     showLoading(`Selling ${qty} ${sym}...`);
     try {
-      await sellHolding(sym, qty, price);
+      if (isLocalPortfolio) {
+        sellLocalHolding(activePortfolioId, sym, qty);
+      } else {
+        await sellHolding(sym, qty, price);
+      }
       hideLoading();
       printLines([
         `<span class="c-green">Sold ${qty} × ${sym} @ ${fmtPrice(price)}</span>`,
@@ -1322,19 +1491,193 @@
   }
 
   async function removeCmd(parts) {
-    if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
-    if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    const isLocalPortfolio = activePortfolioId !== 'main';
+    if (!isLocalPortfolio) {
+      if (!supabaseEnabled()) { printLines([`<span class="c-red">Supabase not configured</span>`]); return; }
+      if (!currentUser) { printLines([`<span class="c-yellow">Sign in first.</span> ${sc('/login')}`]); return; }
+    }
     if (parts.length < 2) { printLines([`<span class="c-red">Usage:</span> /remove <SYMBOL>`]); return; }
     const sym = parts[1].toUpperCase();
     showLoading(`Removing ${sym}...`);
     try {
-      await removeHolding(sym);
+      if (isLocalPortfolio) {
+        removeLocalHolding(activePortfolioId, sym);
+      } else {
+        await removeHolding(sym);
+      }
       hideLoading();
       printLines([`<span class="c-green">Removed ${sym}.</span> ${sc('/portfolio')}`]);
     } catch (e) {
       hideLoading();
       printLines([`<span class="c-red">Error:</span> ${e.message}`]);
     }
+  }
+
+  // ─── Portfolio management dynamic commands ────────────
+
+  function newPortfolioCmd(nameParts) {
+    const name = nameParts.join(' ').trim();
+    if (!name) {
+      printLines([`<span class="c-red">Usage:</span> /newportfolio <name>`, `${dim('Example:')} ${sc('/newportfolio Tech Stocks')}`]);
+      return;
+    }
+    createLocalPortfolio(name);
+    printLines([
+      `<span class="c-green">Created portfolio:</span> <strong>${name}</strong>  ${dim('(now active)')}`,
+      dim(`Use ${sc('/add')} to add holdings  ·  ${sc('/portfolios')} to list all`),
+    ]);
+  }
+
+  function switchPortfolioCmd(arg) {
+    if (!arg) { printLines([`<span class="c-red">Usage:</span> /switchportfolio <# or name>`]); return; }
+    const p = getPortfolioByNameOrIndex(arg);
+    if (!p) { printLines([`<span class="c-red">Portfolio not found:</span> ${arg}  ${dim('—')}  ${sc('/portfolios')} to list`]); return; }
+    setActivePortfolio(p.id);
+    printLines([
+      `<span class="c-green">Active portfolio:</span> <strong>${p.name}</strong>`,
+      dim(`/add, /sell, /remove now operate on this portfolio`),
+    ]);
+  }
+
+  function deletePortfolioCmd(arg) {
+    if (!arg) { printLines([`<span class="c-red">Usage:</span> /deleteportfolio <# or name>`]); return; }
+    const p = getPortfolioByNameOrIndex(arg);
+    if (!p) { printLines([`<span class="c-red">Portfolio not found:</span> ${arg}`]); return; }
+    if (p.id === 'main') { printLines([`<span class="c-red">Cannot delete Main Portfolio.</span>`]); return; }
+    deleteLocalPortfolio(p.id);
+    printLines([`<span class="c-green">Deleted:</span> ${p.name}  ${dim('· Active set to Main')}`, sc('/portfolios')]);
+  }
+
+  function renamePortfolioCmd(parts) {
+    if (parts.length < 2) { printLines([`<span class="c-red">Usage:</span> /renameportfolio <# or name> <new name>`]); return; }
+    const p = getPortfolioByNameOrIndex(parts[0]);
+    if (!p) { printLines([`<span class="c-red">Portfolio not found:</span> ${parts[0]}`]); return; }
+    if (p.id === 'main') { printLines([`<span class="c-red">Cannot rename Main Portfolio.</span>`]); return; }
+    const newName = parts.slice(1).join(' ');
+    renameLocalPortfolio(p.id, newName);
+    updatePortfolioUI();
+    printLines([`<span class="c-green">Renamed to:</span> <strong>${newName}</strong>  ${sc('/portfolios')}`]);
+  }
+
+  async function compareCmd(arg1, arg2) {
+    if (!arg1 || !arg2) {
+      printLines([
+        `<span class="c-red">Usage:</span> /compare <#> <#>`,
+        `${dim('Example:')} ${sc('/compare 1 2')}`,
+        dim(`Use ${sc('/portfolios')} to see portfolio numbers.`),
+      ]);
+      return;
+    }
+    const p1 = getPortfolioByNameOrIndex(arg1);
+    const p2 = getPortfolioByNameOrIndex(arg2);
+    if (!p1) { printLines([`<span class="c-red">Portfolio not found:</span> ${arg1}`]); return; }
+    if (!p2) { printLines([`<span class="c-red">Portfolio not found:</span> ${arg2}`]); return; }
+
+    showLoading(`Comparing ${p1.name} vs ${p2.name}...`);
+    try {
+      const [r1, r2] = await Promise.all([
+        getHoldingsForPortfolio(p1.id),
+        getHoldingsForPortfolio(p2.id),
+      ]);
+
+      const allSyms = [...new Set([...r1.holdings.map(h => h.sym), ...r2.holdings.map(h => h.sym)])];
+      const data = allSyms.length > 0 ? await fetchQuotes(allSyms).catch(() => ({})) : {};
+      hideLoading();
+
+      function calcStats(holdings) {
+        let totalValue = 0, totalPL = 0, totalCost = 0, totalDayPL = 0;
+        holdings.forEach(h => {
+          const q = data[h.sym];
+          const price = q ? q.price : mockData[h.sym]?.price || 0;
+          const change = q ? q.change : 0;
+          const value = price * h.qty;
+          totalValue += value;
+          totalPL += (price - h.avgCost) * h.qty;
+          totalCost += h.avgCost * h.qty;
+          totalDayPL += value * change / 100;
+        });
+        const totalPLPct = totalCost > 0 ? (totalPL / totalCost) * 100 : 0;
+        const dayPct = totalValue > 0 ? (totalDayPL / (totalValue - totalDayPL || 1)) * 100 : 0;
+        return { totalValue, totalPL, totalPLPct, totalDayPL, dayPct, count: holdings.length };
+      }
+
+      const s1 = calcStats(r1.holdings);
+      const s2 = calcStats(r2.holdings);
+
+      function cmpIndicator(v1, v2) {
+        if (Math.abs(v1 - v2) < 0.001) return [dim('·'), dim('·')];
+        return v1 > v2 ? [pos('▲'), neg('▼')] : [neg('▼'), pos('▲')];
+      }
+
+      const [tv1, tv2] = cmpIndicator(s1.totalValue, s2.totalValue);
+      const [pl1, pl2] = cmpIndicator(s1.totalPLPct, s2.totalPLPct);
+      const [dp1, dp2] = cmpIndicator(s1.dayPct, s2.dayPct);
+
+      const summaryRows = [
+        ['Total Value',
+          `${fmtPrice(s1.totalValue)} ${tv1}`,
+          `${fmtPrice(s2.totalValue)} ${tv2}`],
+        ['Total P/L',
+          `${fmtPL(s1.totalPL)} (${fmtPLPct(s1.totalPLPct)}) ${pl1}`,
+          `${fmtPL(s2.totalPL)} (${fmtPLPct(s2.totalPLPct)}) ${pl2}`],
+        ['Day P/L',
+          `${fmtPL(s1.totalDayPL)} (${fmtPLPct(s1.dayPct)}) ${dp1}`,
+          `${fmtPL(s2.totalDayPL)} (${fmtPLPct(s2.dayPct)}) ${dp2}`],
+        ['Positions', String(s1.count), String(s2.count)],
+      ];
+      printRaw(panel(
+        `Compare: ${p1.name} vs ${p2.name}`,
+        table([dim('Metric'), `<strong>${p1.name}</strong>`, `<strong>${p2.name}</strong>`], summaryRows),
+        'SIDE-BY-SIDE'
+      ));
+
+      // Holdings side by side
+      function holdingsHtml(holdings, portfolioName) {
+        if (holdings.length === 0) {
+          return panel(portfolioName, dim('No holdings.'));
+        }
+        const rows = [...holdings]
+          .map(h => {
+            const q = data[h.sym];
+            const price = q ? q.price : mockData[h.sym]?.price || 0;
+            const change = q ? q.change : 0;
+            const value = price * h.qty;
+            const plPct = h.avgCost > 0 ? ((price / h.avgCost) - 1) * 100 : 0;
+            return { sym: h.sym, value, change, plPct };
+          })
+          .sort((a, b) => b.value - a.value)
+          .map(r => [tn(r.sym), fmtPrice(r.value), fmtChange(r.change), fmtPLPct(r.plPct)]);
+        return panel(portfolioName, table(['Ticker', 'Value', 'Day', 'P/L%'], rows));
+      }
+
+      printRaw(`<div class="compare-grid">${holdingsHtml(r1.holdings, p1.name)}${holdingsHtml(r2.holdings, p2.name)}</div>`);
+
+      // Allocation bars side by side
+      function allocHtml(holdings, stats, portfolioName) {
+        if (holdings.length === 0) return panel(`${portfolioName} · Allocation`, dim('No holdings.'));
+        let bar = '<div class="alloc-bar">';
+        [...holdings].sort((a, b) => {
+          const qa = data[a.sym], qb = data[b.sym];
+          return (qb ? qb.price * b.qty : 0) - (qa ? qa.price * a.qty : 0);
+        }).forEach((h, i) => {
+          const q = data[h.sym];
+          const value = (q ? q.price : mockData[h.sym]?.price || 0) * h.qty;
+          const pct = stats.totalValue > 0 ? (value / stats.totalValue * 100) : 0;
+          const color = ALLOC_COLORS[i % ALLOC_COLORS.length];
+          bar += `<div class="alloc-segment" style="width:${pct}%;background:${color}">${pct >= 10 ? h.sym : ''}</div>`;
+        });
+        bar += '</div>';
+        return panel(`${portfolioName} · Allocation`, bar);
+      }
+      printRaw(`<div class="compare-grid">${allocHtml(r1.holdings, s1, p1.name)}${allocHtml(r2.holdings, s2, p2.name)}</div>`);
+
+    } catch (e) {
+      hideLoading();
+      printLines([`<span class="c-red">Compare failed:</span> ${e.message}`]);
+    }
+    printBlank();
+    bindSlashCommands();
+    scrollToBottom();
   }
 
   // ─── Router ───────────────────────────────────────────
@@ -1355,6 +1698,13 @@
     else if (cmd === '/add' || cmd === '/buy') addCmd(parts);
     else if (cmd === '/sell') sellCmd(parts);
     else if (cmd === '/remove' || cmd === '/rm') removeCmd(parts);
+    else if (cmd === '/portfolio') commands['/portfolio'](parts.slice(1).join(' ').trim() || null);
+    else if (cmd === '/analytics') commands['/analytics'](parts.slice(1).join(' ').trim() || null);
+    else if (cmd === '/newportfolio' || cmd === '/np') newPortfolioCmd(parts.slice(1));
+    else if (cmd === '/compare' || cmd === '/cmp') compareCmd(parts[1], parts[2]);
+    else if (cmd === '/switchportfolio' || cmd === '/switch' || cmd === '/sp') switchPortfolioCmd(parts.slice(1).join(' ').trim());
+    else if (cmd === '/deleteportfolio' || cmd === '/dp') deletePortfolioCmd(parts.slice(1).join(' ').trim());
+    else if (cmd === '/renameportfolio' || cmd === '/rp') renamePortfolioCmd(parts.slice(1));
     else if (commands[cmd]) commands[cmd]();
     else printLines([`<span class="c-red">unknown:</span> ${trimmed}`, `${sc('/help')} for commands`]);
   }
