@@ -55,6 +55,7 @@
   // ─── Data fetching ──────────────────────────────────────
 
   const API_BASE = '/api/quote';
+  const API_OPTIONS = '/api/options';
   const cache = {};
   const CACHE_TTL = 5000; // 5 seconds for live feel
 
@@ -130,6 +131,18 @@
     return data;
   }
 
+  async function fetchOptionsData(symbol) {
+    const key = 'options:' + symbol;
+    const cached = getCached(key);
+    if (cached) return cached;
+    const res = await fetch(`${API_OPTIONS}?symbol=${symbol}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    setCache(key, data);
+    return data;
+  }
+
   function fmtVol(v) {
     if (!v) return '—';
     if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
@@ -174,7 +187,7 @@
   function detectAssetType(sym) {
     if (sym.endsWith('-USD') || ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'DOGE', 'XRP'].some(c => sym.startsWith(c))) return 'crypto';
     if (['GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F', 'PL=F', 'PA=F', 'GLD', 'SLV', 'USO'].includes(sym)) return 'commodity';
-    if (['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'VEA', 'VWO', 'BND', 'AGG', 'TLT', 'IEF', 'LQD', 'HYG', 'ARKK', 'XLF', 'XLE', 'XLK'].includes(sym)) return 'etf';
+    if (['SPY', 'QQQ', 'QQQM', 'IWM', 'DIA', 'VTI', 'VOO', 'VEA', 'VWO', 'BND', 'AGG', 'TLT', 'IEF', 'LQD', 'HYG', 'ARKK', 'XLF', 'XLE', 'XLK', 'VIG', 'SCHD', 'JEPI', 'JEPQ', 'SQQQ', 'TQQQ', 'GDX', 'SLV', 'GLD'].includes(sym)) return 'etf';
     if (['TLT', 'IEF', 'SHY', 'BND', 'AGG', 'LQD', 'HYG', 'VCSH', 'VCIT', 'VCLT'].includes(sym)) return 'bond';
     return 'equity';
   }
@@ -337,6 +350,212 @@
     ro.observe(container);
   }
 
+  // ─── Monte Carlo & OI Canvas ─────────────────────────
+
+  function boxMullerRandom() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function runMonteCarlo(closes, startValue, nPaths, nDays) {
+    const returns = [];
+    for (let i = 1; i < closes.length; i++) {
+      returns.push(Math.log(closes[i] / closes[i - 1]));
+    }
+    const mu = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - mu) ** 2, 0) / returns.length;
+    const sigma = Math.sqrt(variance);
+    const drift = mu - 0.5 * sigma ** 2;
+
+    const paths = [];
+    for (let p = 0; p < nPaths; p++) {
+      const path = [startValue];
+      for (let d = 0; d < nDays; d++) {
+        const prev = path[path.length - 1];
+        path.push(prev * Math.exp(drift + sigma * boxMullerRandom()));
+      }
+      paths.push(path);
+    }
+    return { paths, mu, sigma, annualVol: sigma * Math.sqrt(252) };
+  }
+
+  function drawMonteCarloCanvas(canvasId, paths, startValue) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const W = canvas.offsetWidth || 580;
+    canvas.width = W;
+    const H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    const nDays = paths[0].length - 1;
+    const pad = { top: 14, right: 6, bottom: 22, left: 52 };
+    const cw = W - pad.left - pad.right;
+    const ch = H - pad.top - pad.bottom;
+
+    let minVal = Infinity, maxVal = -Infinity;
+    paths.forEach(path => path.forEach(v => { minVal = Math.min(minVal, v); maxVal = Math.max(maxVal, v); }));
+    const margin = (maxVal - minVal) * 0.08;
+    minVal -= margin; maxVal += margin;
+
+    const tx = d => pad.left + (d / nDays) * cw;
+    const ty = v => pad.top + ch - ((v - minVal) / (maxVal - minVal)) * ch;
+
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.top + ch * i / 4;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+      const val = maxVal - (maxVal - minVal) * i / 4;
+      ctx.fillStyle = '#444'; ctx.font = '9px JetBrains Mono, monospace';
+      ctx.fillText(fmtPrice(val), 2, y + 3);
+    }
+
+    // Paths
+    paths.forEach(path => {
+      ctx.strokeStyle = 'rgba(95,135,255,0.12)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      path.forEach((v, d) => { d === 0 ? ctx.moveTo(tx(d), ty(v)) : ctx.lineTo(tx(d), ty(v)); });
+      ctx.stroke();
+    });
+
+    // Compute percentiles per day
+    const pctByDay = Array.from({ length: nDays + 1 }, (_, d) => {
+      const vals = paths.map(p => p[d]).sort((a, b) => a - b);
+      const p = f => vals[Math.max(0, Math.floor(vals.length * f))];
+      return { p10: p(0.10), p25: p(0.25), p50: p(0.50), p75: p(0.75), p90: p(0.90) };
+    });
+
+    // Shaded band p25-p75
+    ctx.fillStyle = 'rgba(95,135,255,0.07)';
+    ctx.beginPath();
+    pctByDay.forEach((p, d) => { d === 0 ? ctx.moveTo(tx(d), ty(p.p75)) : ctx.lineTo(tx(d), ty(p.p75)); });
+    for (let d = nDays; d >= 0; d--) ctx.lineTo(tx(d), ty(pctByDay[d].p25));
+    ctx.closePath(); ctx.fill();
+
+    // P90 dashed
+    ctx.strokeStyle = 'rgba(95,175,95,0.6)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    pctByDay.forEach((p, d) => { d === 0 ? ctx.moveTo(tx(d), ty(p.p90)) : ctx.lineTo(tx(d), ty(p.p90)); });
+    ctx.stroke();
+
+    // P10 dashed
+    ctx.strokeStyle = 'rgba(215,95,95,0.6)';
+    ctx.beginPath();
+    pctByDay.forEach((p, d) => { d === 0 ? ctx.moveTo(tx(d), ty(p.p10)) : ctx.lineTo(tx(d), ty(p.p10)); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Median solid
+    ctx.strokeStyle = '#5faf5f'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    pctByDay.forEach((p, d) => { d === 0 ? ctx.moveTo(tx(d), ty(p.p50)) : ctx.lineTo(tx(d), ty(p.p50)); });
+    ctx.stroke();
+
+    // Start value line
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.moveTo(pad.left, ty(startValue)); ctx.lineTo(W - pad.right, ty(startValue)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // X-axis labels
+    ctx.fillStyle = '#444'; ctx.font = '9px JetBrains Mono, monospace';
+    ctx.fillText('Today', pad.left, H - 6);
+    const mid = Math.floor(nDays / 2);
+    ctx.fillText(`+${mid}d`, tx(mid) - 10, H - 6);
+    ctx.fillText(`+${nDays}d`, tx(nDays) - 14, H - 6);
+
+    // End labels
+    const last = pctByDay[nDays];
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.fillStyle = '#5faf5f'; ctx.fillText(fmtPrice(last.p90), tx(nDays) + 2, ty(last.p90) + 3);
+    ctx.fillStyle = '#aaa';    ctx.fillText(fmtPrice(last.p50), tx(nDays) + 2, ty(last.p50) + 3);
+    ctx.fillStyle = '#d75f5f'; ctx.fillText(fmtPrice(last.p10), tx(nDays) + 2, ty(last.p10) + 3);
+  }
+
+  function drawOICanvas(canvasId, callDist, putDist, currentPrice) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const W = canvas.offsetWidth || 580;
+    canvas.width = W;
+    const H = canvas.height;
+    const ctx = canvas.getContext('2d');
+
+    // Merge strikes
+    const strikeSet = new Set([...callDist.map(c => c.strike), ...putDist.map(p => p.strike)]);
+    const strikes = [...strikeSet].sort((a, b) => a - b);
+    if (strikes.length === 0) return;
+
+    const callMap = Object.fromEntries(callDist.map(c => [c.strike, c.oi]));
+    const putMap = Object.fromEntries(putDist.map(p => [p.strike, p.oi]));
+    const maxOI = Math.max(...strikes.map(s => Math.max(callMap[s] || 0, putMap[s] || 0)), 1);
+
+    const pad = { top: 10, right: 4, bottom: 20, left: 44 };
+    const cw = W - pad.left - pad.right;
+    const ch = H - pad.top - pad.bottom;
+    const bw = cw / strikes.length;
+
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      const y = pad.top + ch * i / 4;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    }
+
+    // OI scale label
+    ctx.fillStyle = '#444'; ctx.font = '9px JetBrains Mono, monospace';
+    const topLabel = maxOI >= 1e6 ? (maxOI / 1e6).toFixed(1) + 'M' : maxOI >= 1e3 ? (maxOI / 1e3).toFixed(0) + 'K' : String(maxOI);
+    ctx.fillText(topLabel, 2, pad.top + 8);
+
+    // Bars
+    strikes.forEach((strike, i) => {
+      const callOI = callMap[strike] || 0;
+      const putOI = putMap[strike] || 0;
+      const x = pad.left + i * bw;
+      const halfBw = bw * 0.46;
+
+      if (callOI > 0) {
+        const h = (callOI / maxOI) * ch;
+        ctx.fillStyle = 'rgba(95,175,95,0.75)';
+        ctx.fillRect(x + bw * 0.02, pad.top + ch - h, halfBw, h);
+      }
+      if (putOI > 0) {
+        const h = (putOI / maxOI) * ch;
+        ctx.fillStyle = 'rgba(215,95,95,0.75)';
+        ctx.fillRect(x + bw * 0.52, pad.top + ch - h, halfBw, h);
+      }
+    });
+
+    // Current price marker
+    const priceIdx = strikes.findIndex(s => s >= currentPrice);
+    if (priceIdx >= 0) {
+      const x = pad.left + priceIdx * bw;
+      ctx.strokeStyle = '#5f87ff'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ch); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#5f87ff'; ctx.font = '9px JetBrains Mono, monospace';
+      ctx.fillText(fmtPrice(currentPrice), x + 2, pad.top + 9);
+    }
+
+    // Strike labels (show ~5 evenly spaced)
+    const labelStep = Math.max(1, Math.floor(strikes.length / 5));
+    ctx.fillStyle = '#444'; ctx.font = '9px JetBrains Mono, monospace';
+    strikes.forEach((s, i) => {
+      if (i % labelStep !== 0) return;
+      const x = pad.left + i * bw + bw * 0.1;
+      ctx.fillText(s >= 1000 ? (s / 1000).toFixed(1) + 'k' : String(s), x, H - 5);
+    });
+
+    // Legend
+    ctx.fillStyle = 'rgba(95,175,95,0.75)'; ctx.fillRect(W - 80, 2, 8, 8);
+    ctx.fillStyle = '#888'; ctx.font = '9px JetBrains Mono, monospace'; ctx.fillText('Calls', W - 70, 10);
+    ctx.fillStyle = 'rgba(215,95,95,0.75)'; ctx.fillRect(W - 36, 2, 8, 8);
+    ctx.fillStyle = '#888'; ctx.fillText('Puts', W - 26, 10);
+  }
+
   // ─── Supabase DB helpers ──────────────────────────────
 
   async function getHoldings() {
@@ -490,7 +709,8 @@
 
     print(`<span class="c-bright">  Portfolio:</span>`);
     print(`    ${sc('/portfolio')}     ${dim('Holdings with live prices (5s refresh)')}`);
-    print(`    ${sc('/analytics')}     ${dim('Allocation, performance & stats')}`);
+    print(`    ${sc('/analytics')}     ${dim('Allocation, performance, OI flow & charts')}`);
+    print(`    ${sc('/montecarlo')}    ${dim('Monte Carlo simulation (100 paths, 60 days)')}`);
     print(`    ${sc('/history')}       ${dim('Transaction history')}`);
     print(`    ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}  ${dim('Buy / add holding')}`);
     print(`    ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')} ${dim('Sell holding')}`);
@@ -529,7 +749,8 @@
         '',
         bright('Portfolio'),
         `  ${sc('/portfolio')}               ${dim('Holdings with live 5s prices')}`,
-        `  ${sc('/analytics')}               ${dim('Allocation & performance')}`,
+        `  ${sc('/analytics')}               ${dim('Allocation, OI flow & options charts')}`,
+        `  ${sc('/montecarlo')}              ${dim('Monte Carlo simulation (100 paths)')}`,
         `  ${sc('/history')}                 ${dim('Transaction log')}`,
         `  ${sc('/add')} ${dim('<SYM> <QTY> <COST>')}   ${dim('Buy shares (auto-detects type)')}`,
         `  ${sc('/sell')} ${dim('<SYM> <QTY> <PRICE>')}  ${dim('Sell shares')}`,
@@ -821,10 +1042,101 @@
         ]);
         printRaw(panel('Performance Ranking', table(['Ticker', 'Type', 'Value', 'P/L', '%'], perfRows)));
 
+        // ── Options Open Interest Section ─────────────────
+        // Only fetch OI for equities and ETFs (not crypto/commodity futures)
+        const optionableTypes = ['equity', 'etf'];
+        const optionableHoldings = positions.filter(p => optionableTypes.includes(p.type));
+
+        if (optionableHoldings.length > 0) {
+          // Load previous snapshot from localStorage for 30d change tracking
+          const OI_SNAP_KEY = 'ww_oi_snapshot';
+          let prevSnap = null;
+          try {
+            const raw = localStorage.getItem(OI_SNAP_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              // Only use snapshot if it's between 1 hour and 35 days old
+              const age = Date.now() - parsed.ts;
+              if (age > 3600000 && age < 35 * 86400000) prevSnap = parsed.data;
+            }
+          } catch (_) {}
+
+          const oiResults = await Promise.allSettled(
+            optionableHoldings.map(p => fetchOptionsData(p.sym))
+          );
+
+          const newSnap = {};
+          const oiRows = [];
+          const oiCharts = [];
+
+          oiResults.forEach((r, i) => {
+            const sym = optionableHoldings[i].sym;
+            if (r.status === 'rejected' || r.value?.error) {
+              oiRows.push([tn(sym), dim('N/A'), dim('N/A'), dim('—'), dim('—')]);
+              return;
+            }
+            const d = r.value;
+            newSnap[sym] = { callOI: d.totalCallOI, putOI: d.totalPutOI };
+
+            const prev = prevSnap?.[sym];
+            const callChange = prev ? d.totalCallOI - prev.callOI : null;
+            const putChange  = prev ? d.totalPutOI  - prev.putOI  : null;
+            const fmtOIVal = v => v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : String(v);
+            const fmtOIChg = v => {
+              if (v === null) return dim('—');
+              const s = v >= 0 ? '+' : '';
+              const cls = v >= 0 ? 'positive' : 'negative';
+              return `<span class="${cls}">${s}${fmtOIVal(Math.abs(v))}</span>`;
+            };
+            const pcr = d.putCallRatio != null ? d.putCallRatio.toFixed(2) : '—';
+            const pcrCls = d.putCallRatio != null ? (d.putCallRatio > 1 ? 'negative' : 'positive') : '';
+            const pcrCell = d.putCallRatio != null ? `<span class="${pcrCls}">${pcr}</span>` : dim('—');
+
+            oiRows.push([
+              tn(sym),
+              `<span class="positive">${fmtOIVal(d.totalCallOI)}</span> ${fmtOIChg(callChange)}`,
+              `<span class="negative">${fmtOIVal(d.totalPutOI)}</span> ${fmtOIChg(putChange)}`,
+              pcrCell,
+              d.expirationDate ? dim(d.expirationDate) : dim('—'),
+            ]);
+
+            if (d.callDist.length > 0 || d.putDist.length > 0) {
+              oiCharts.push({ sym, d });
+            }
+          });
+
+          // Save new snapshot
+          try { localStorage.setItem(OI_SNAP_KEY, JSON.stringify({ ts: Date.now(), data: newSnap })); } catch (_) {}
+
+          const changeLabel = prevSnap ? 'Chg (vs last)' : dim('Chg (first run)');
+          printRaw(panel('Open Interest · Options Flow',
+            table(['Ticker', `Call OI ${changeLabel}`, `Put OI ${changeLabel}`, 'P/C Ratio', 'Expiry'], oiRows)
+          ));
+
+          // OI distribution charts per symbol
+          oiCharts.forEach(({ sym, d }) => {
+            const oiId = 'oi-' + sym + '-' + Date.now();
+            printRaw(panel(
+              `${sym} · OI by Strike (±25% NTM)`,
+              `<canvas id="${oiId}" height="120" style="width:100%;display:block;"></canvas>
+               <div style="font-size:10px;color:#555;margin-top:3px;display:flex;gap:12px">
+                 <span><span style="color:rgba(95,175,95,0.75)">█</span> Calls</span>
+                 <span><span style="color:rgba(215,95,95,0.75)">█</span> Puts</span>
+                 <span><span style="color:#5f87ff">┊</span> Current Price</span>
+               </div>`,
+              d.expirationDate || 'OI'
+            ));
+            const callDist = d.callDist, putDist = d.putDist, cp = d.currentPrice;
+            requestAnimationFrame(() => drawOICanvas(oiId, callDist, putDist, cp));
+          });
+        }
+
       } catch (e) {
         hideLoading();
         printLines([`<span class="c-red">Failed to load analytics.</span> ${dim('Try again later.')}`]);
       }
+      printBlank();
+      print(dim(`${sc('/montecarlo')} for portfolio simulation · OI snapshot saved for change tracking`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -985,6 +1297,121 @@
       } catch (e) {
         printLines([`<span class="c-red">Error:</span> ${e.message}`]);
       }
+      printBlank();
+      bindSlashCommands();
+      scrollToBottom();
+    },
+
+    '/montecarlo': async function() {
+      showLoading('Running Monte Carlo simulation...');
+
+      let holdings;
+      if (sb && currentUser) {
+        try {
+          const db = await getHoldings();
+          if (db && db.length > 0) {
+            holdings = db.map(h => ({ sym: h.symbol, qty: Number(h.qty), avgCost: Number(h.avg_cost), type: h.asset_type }));
+          }
+        } catch (e) {}
+      }
+      if (!holdings) {
+        holdings = [
+          { sym: 'AAPL', qty: 50, avgCost: 171.20, type: 'equity' },
+          { sym: 'NVDA', qty: 25, avgCost: 480.50, type: 'equity' },
+          { sym: 'SPY',  qty: 30, avgCost: 440.00, type: 'etf' },
+        ];
+      }
+
+      try {
+        // Fetch current prices + chart history for all holdings
+        const [quotes, ...charts] = await Promise.all([
+          fetchQuotes(holdings.map(h => h.sym)),
+          ...holdings.map(h => fetchChartData(h.sym).catch(() => null)),
+        ]);
+        hideLoading();
+
+        const positions = holdings.map((h, i) => {
+          const q = quotes[h.sym];
+          const price = q ? q.price : (mockData[h.sym]?.price || h.avgCost);
+          return { ...h, price, value: price * h.qty, chart: charts[i] };
+        });
+
+        const totalValue = positions.reduce((s, p) => s + p.value, 0);
+
+        // Build portfolio-level weighted daily returns from chart data
+        let portfolioCloses = null;
+        const validPositions = positions.filter(p => p.chart && p.chart.closes.length > 5);
+
+        if (validPositions.length > 0) {
+          // Find shortest series length
+          const minLen = Math.min(...validPositions.map(p => p.chart.closes.length));
+          const totalW = validPositions.reduce((s, p) => s + p.value, 0);
+
+          // Weighted portfolio value series
+          portfolioCloses = Array.from({ length: minLen }, (_, i) => {
+            return validPositions.reduce((sum, p) => {
+              const weight = p.value / totalW;
+              return sum + p.chart.closes[p.chart.closes.length - minLen + i] * weight;
+            }, 0);
+          });
+          // Scale to actual total value
+          const scaleFactor = totalValue / (portfolioCloses[portfolioCloses.length - 1] || 1);
+          portfolioCloses = portfolioCloses.map(v => v * scaleFactor);
+        }
+
+        if (!portfolioCloses || portfolioCloses.length < 5) {
+          printLines([`<span class="c-red">Not enough historical data to run simulation.</span>`]);
+          printBlank(); bindSlashCommands(); scrollToBottom();
+          return;
+        }
+
+        const N_PATHS = 100;
+        const N_DAYS = 60;
+        const { paths, annualVol } = runMonteCarlo(portfolioCloses, totalValue, N_PATHS, N_DAYS);
+
+        // Summary stats at day 30 and 60
+        const statsAt = (day) => {
+          const vals = paths.map(p => p[day]).sort((a, b) => a - b);
+          const p = f => vals[Math.max(0, Math.floor(vals.length * f))];
+          return { p10: p(0.10), p25: p(0.25), p50: p(0.50), p75: p(0.75), p90: p(0.90) };
+        };
+        const s30 = statsAt(30);
+        const s60 = statsAt(N_DAYS);
+        const fmtDelta = (v) => {
+          const d = v - totalValue;
+          const pct = (d / totalValue * 100);
+          const sign = d >= 0 ? '+' : '';
+          const cls = d >= 0 ? 'positive' : 'negative';
+          return `<span class="${cls}">${sign}${fmtPrice(d)} (${sign}${pct.toFixed(1)}%)</span>`;
+        };
+
+        const summaryRows = [
+          ['Current Value',      fmtPrice(totalValue), ''],
+          ['Annual Volatility',  `${(annualVol * 100).toFixed(1)}%`, ''],
+          ['', bright('+30 Days'), bright('+60 Days')],
+          ['Bull case (90th)',   `${fmtPrice(s30.p90)} ${fmtDelta(s30.p90)}`, `${fmtPrice(s60.p90)} ${fmtDelta(s60.p90)}`],
+          ['Expected (median)',  `${fmtPrice(s30.p50)} ${fmtDelta(s30.p50)}`, `${fmtPrice(s60.p50)} ${fmtDelta(s60.p50)}`],
+          ['Bear case (10th)',   `${fmtPrice(s30.p10)} ${fmtDelta(s30.p10)}`, `${fmtPrice(s60.p10)} ${fmtDelta(s60.p10)}`],
+        ];
+        printRaw(panel('Monte Carlo Summary', table(['Scenario', '+30 Days', '+60 Days'], summaryRows), `${N_PATHS} PATHS`));
+
+        const mcId = 'mc-' + Date.now();
+        const canvasHtml = `<canvas id="${mcId}" height="200" style="width:100%;display:block;"></canvas>
+          <div style="font-size:10px;color:#555;margin-top:4px;display:flex;gap:16px">
+            <span><span style="color:#5faf5f">━━</span> Median</span>
+            <span><span style="color:rgba(95,175,95,0.6)">╌╌</span> 90th pct</span>
+            <span><span style="color:rgba(215,95,95,0.6)">╌╌</span> 10th pct</span>
+            <span><span style="color:rgba(95,135,255,0.4)">░░</span> P25–P75 band</span>
+          </div>`;
+        printRaw(panel(`Portfolio Simulation · ${N_PATHS} Paths · 60 Days`, canvasHtml, 'GBM'));
+        requestAnimationFrame(() => drawMonteCarloCanvas(mcId, paths, totalValue));
+
+      } catch (e) {
+        hideLoading();
+        printLines([`<span class="c-red">Simulation failed:</span> ${e.message}`]);
+      }
+      printBlank();
+      print(dim(`Based on 30d historical returns · Geometric Brownian Motion · Not financial advice`));
       printBlank();
       bindSlashCommands();
       scrollToBottom();
@@ -1336,6 +1763,7 @@
     else if (cmd === '/remove' || cmd === '/rm') removeCmd(parts);
     else if (cmd === '/watch') commands['/watch'](parts.slice(1));
     else if (cmd === '/unwatch') commands['/unwatch'](parts.slice(1));
+    else if (cmd === '/montecarlo' || cmd === '/mc') commands['/montecarlo']();
     else if (commands[cmd]) commands[cmd]();
     else printLines([`<span class="c-red">unknown:</span> ${trimmed}`, `${sc('/help')} for commands`]);
   }
