@@ -47,15 +47,41 @@ module.exports = async (req, res) => {
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`;
     const data = await yahooFetch(url);
 
-    // Fix regularMarketChangePercent if Yahoo returns 0 but we have price + prevClose
     const results = data.quoteResponse?.result;
     if (Array.isArray(results)) {
+      // Fix change% when prevClose is available
       results.forEach(q => {
         if (!q.regularMarketChangePercent && q.regularMarketPrice && q.regularMarketPreviousClose) {
           q.regularMarketChangePercent =
             ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
         }
       });
+
+      // Supplement missing prevClose via v8/chart for any symbol still showing 0 change
+      const needsChart = results.filter(q =>
+        !q.regularMarketChangePercent && q.regularMarketPrice && !q.regularMarketPreviousClose
+      );
+
+      if (needsChart.length > 0) {
+        const chartResults = await Promise.allSettled(
+          needsChart.map(q =>
+            yahooFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(q.symbol)}?interval=1d&range=5d`)
+          )
+        );
+        chartResults.forEach((r, i) => {
+          if (r.status !== 'fulfilled') return;
+          const chartResult = r.value.chart?.result?.[0];
+          if (!chartResult) return;
+          const closes = chartResult.indicators?.quote?.[0]?.close?.filter(Boolean) || [];
+          const prevClose = chartResult.meta?.previousClose ||
+            (closes.length >= 2 ? closes[closes.length - 2] : null);
+          if (!prevClose) return;
+          const q = needsChart[i];
+          q.regularMarketPreviousClose = prevClose;
+          q.regularMarketChangePercent =
+            ((q.regularMarketPrice - prevClose) / prevClose) * 100;
+        });
+      }
     }
 
     return res.json(data);

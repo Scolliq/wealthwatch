@@ -1783,8 +1783,12 @@
   // ─── Clock & Market Status ────────────────────────────
 
   function updateClock() {
-    const now = new Date();
-    document.getElementById('clock').textContent = [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+    const est = new Date().toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    document.getElementById('clock').textContent = est + ' EST';
   }
   updateClock();
   setInterval(updateClock, 1000);
