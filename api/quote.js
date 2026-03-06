@@ -28,7 +28,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
 
-  const { symbols, type } = req.query;
+  const { symbols, type, range } = req.query;
 
   if (!symbols) {
     return res.status(400).json({ error: 'Missing symbols parameter' });
@@ -38,7 +38,9 @@ module.exports = async (req, res) => {
     if (type === 'chart') {
       // Single symbol chart data
       const sym = symbols.split(',')[0];
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1mo`;
+      const validRanges = ['1d','5d','1mo','3mo','6mo','1y','2y','5y','10y','ytd','max'];
+      const r = validRanges.includes(range) ? range : '1mo';
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=${r}`;
       const data = await yahooFetch(url);
       return res.json(data);
     }

@@ -97,12 +97,12 @@
     return data;
   }
 
-  async function fetchChartData(symbol) {
-    const key = 'chart:' + symbol;
+  async function fetchChartData(symbol, range = '1mo') {
+    const key = 'chart:' + symbol + ':' + range;
     const cached = getCached(key);
     if (cached) return cached;
 
-    const res = await fetch(`${API_BASE}?symbols=${symbol}&type=chart`);
+    const res = await fetch(`${API_BASE}?symbols=${symbol}&type=chart&range=${range}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     const result = json.chart?.result?.[0];
@@ -812,9 +812,9 @@
         ]);
         printRaw(panel("Today's Movers", table(['Ticker', 'Type', 'Value', 'Day %', 'Day P/L'], moverRows), 'BY DAY CHANGE'));
 
-        // Value at Risk — Historical Simulation
+        // Value at Risk — Historical Simulation (2-year window)
         try {
-          const chartResults = await Promise.allSettled(holdings.map(h => fetchChartData(h.sym)));
+          const chartResults = await Promise.allSettled(holdings.map(h => fetchChartData(h.sym, '2y')));
 
           // Build daily return series for each position that has chart data
           const posReturns = [];
@@ -881,11 +881,11 @@
               ['Best Day (30d)',   fmtPL(bestRet * totalValue),  fmtChange(bestRet * 100)],
             ];
 
-            const varNote = dim(`Historical simulation · ${n} trading days · Square-root-of-time for 10d · Assumes static weights`);
+            const varNote = dim(`Historical simulation · ${n} trading days (~2yr) · Square-root-of-time for 10d · Assumes static weights`);
             printRaw(panel('Value at Risk (VaR)',
               table(['Metric', 'Dollar Impact', 'Return'], varRows) +
               `<div style="padding:6px 0 2px;font-size:11px">${varNote}</div>`,
-              'HISTORICAL · 30D'
+              'HISTORICAL · 2YR'
             ));
           }
         } catch (_) { /* VaR is supplementary — fail silently */ }
